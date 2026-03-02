@@ -6,6 +6,7 @@ import { generations, user, userGenerations } from "../db/schema";
 import { createAuth } from "../auth";
 import HonoAppType from "../../types/honoAppType";
 import { getDbClient } from "../db/factory";
+import { resolveD1Database } from "../../infra/db/client";
 
 const isMissingUserGenerationsTableError = (error: unknown): boolean => {
   if (!(error instanceof Error)) {
@@ -22,7 +23,8 @@ const isMissingUserGenerationsTableError = (error: unknown): boolean => {
 export const getActorFromSession = async (
   c: Context<HonoAppType>,
 ): Promise<Actor | null> => {
-  const auth = createAuth(c.env.db, c.env);
+  const database = resolveD1Database(c.env);
+  const auth = createAuth(database, c.env);
   const sessionResult = await auth.api.getSession({
     headers: c.req.raw.headers,
   });
@@ -31,7 +33,7 @@ export const getActorFromSession = async (
     return null;
   }
 
-  const db = getDbClient(c.env.db);
+  const db = getDbClient(database);
   const dbUser = await db.query.user.findFirst({
     where: eq(user.id, sessionResult.user.id),
     columns: {

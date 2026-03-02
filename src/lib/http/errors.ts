@@ -1,23 +1,31 @@
 import type { ApiErrorCode } from "../../shared/api-contracts";
+import { AppError } from "../../shared/errors/AppError";
 
 type HttpErrorStatus = 400 | 401 | 403 | 404 | 409 | 413 | 415 | 422 | 429 | 500;
 
-export class HttpError extends Error {
+export class HttpError extends AppError {
   readonly status: HttpErrorStatus;
-  readonly code: ApiErrorCode;
-  readonly expose: boolean;
+  override readonly code: ApiErrorCode;
 
   constructor(options: {
     status: HttpErrorStatus;
     code: ApiErrorCode;
     message: string;
     expose?: boolean;
+    details?: unknown;
+    cause?: unknown;
   }) {
-    super(options.message);
+    super({
+      httpStatus: options.status,
+      code: options.code,
+      message: options.message,
+      expose: options.expose,
+      details: options.details,
+      cause: options.cause,
+    });
     this.name = "HttpError";
     this.status = options.status;
     this.code = options.code;
-    this.expose = options.expose ?? options.status < 500;
   }
 
   static badRequest(message: string): HttpError {

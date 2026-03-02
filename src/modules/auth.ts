@@ -1,5 +1,6 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { createAuth } from "../lib/auth";
+import { resolveD1Database } from "../infra/db/client";
 import HonoAppType from "../types/honoAppType";
 
 type App = OpenAPIHono<HonoAppType>;
@@ -12,7 +13,7 @@ type App = OpenAPIHono<HonoAppType>;
  */
 export function registerAuthRoutes(app: App) {
   app.on(["GET", "POST"], "/api/auth/*", async (c): Promise<any> => {
-    const auth = createAuth(c.env.db, c.env);
+    const auth = createAuth(resolveD1Database(c.env), c.env);
     return auth.handler(c.req.raw);
   });
 }

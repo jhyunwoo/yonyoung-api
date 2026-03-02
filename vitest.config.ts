@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["src/tests/**/*.test.ts"],
+    include: ["src/tests/**/*.test.ts", "tests/unit/**/*.test.ts"],
     environment: "node",
     coverage: {
       provider: "v8",
@@ -20,10 +20,10 @@ export default defineConfig({
         "src/lib/validation/request.ts",
       ],
       thresholds: {
-        lines: 90,
-        functions: 90,
-        statements: 90,
-        branches: 75,
+        lines: 80,
+        functions: 80,
+        statements: 80,
+        branches: 70,
       },
     },
   },

@@ -1,21 +1,95 @@
-```txt
-npm install
-npm run dev
+# Yonyoung API
+
+Cloudflare Workers 기반 Hono API 서버입니다.
+
+## Tech Stack
+
+- Runtime: Cloudflare Workers
+- API Framework: Hono + `@hono/zod-openapi`
+- Database: Cloudflare D1 + Drizzle ORM
+- Object Storage: Cloudflare R2
+- Auth: Better Auth
+- Validation: Zod
+
+## Architecture
+
+```text
+src/
+  app/
+    createApp.ts
+    middleware/
+      body-size.ts
+      errorHandler.ts
+      logger.ts
+      requestId.ts
+      securityHeaders.ts
+    openapi.ts
+  bindings/
+    env.ts
+    types.ts
+  infra/
+    db/
+      client.ts
+      migrations.ts
+    r2/
+      client.ts
+  shared/
+    errors/
+      AppError.ts
+      errorCodes.ts
+      httpProblem.ts
+      mapError.ts
+    logging/
+      logger.ts
+  modules/                # domain routes (existing)
+  lib/                    # existing services/repositories/openapi helpers
+  index.ts
+
+tests/
+  integration/
+  setup/
+  unit/
 ```
 
-```txt
-npm run deploy
+## API Docs
+
+- OpenAPI JSON: `/api/openapi.json`, `/doc`
+- API UI: `/api/docs`, `/ui`
+
+`@hono/zod-openapi` 스키마가 API 문서의 단일 소스입니다.
+
+## Local Development
+
+```bash
+pnpm install
+pnpm dev
 ```
 
-[For generating/synchronizing types based on your Worker configuration run](https://developers.cloudflare.com/workers/wrangler/commands/#types):
+## Quality Gates
 
-```txt
-npm run cf-typegen
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:coverage
 ```
 
-Pass the `CloudflareBindings` as generics when instantiation `Hono`:
+### Test Notes
 
-```ts
-// src/index.ts
-const app = new Hono<{ Bindings: CloudflareBindings }>()
+- Node tests: `src/tests/**/*.test.ts`, `tests/unit/**/*.test.ts`
+- Workers runtime tests: `tests/integration/**/*.test.ts` via `@cloudflare/vitest-pool-workers`
+
+## Deployment
+
+```bash
+pnpm deploy
 ```
+
+## CI
+
+PR에서 다음 검증이 수행됩니다.
+
+- `pnpm lint`
+- `pnpm typecheck`
+- `pnpm test`
+- `pnpm test:coverage`

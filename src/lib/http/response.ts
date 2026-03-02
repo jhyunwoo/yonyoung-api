@@ -1,5 +1,6 @@
 import { Context } from "hono";
-import type { ApiErrorCode } from "../../shared/api-contracts";
+import { AppError } from "../../shared/errors/AppError";
+import { toErrorResponse } from "../../shared/errors/httpProblem";
 import { HttpError } from "./errors";
 
 const normalizeValue = (value: unknown): unknown => {
@@ -28,63 +29,56 @@ export const noContent = (c: Context) => {
   return c.body(null, 204);
 };
 
-const errorResponse = (
-  c: Context,
-  status: 400 | 401 | 403 | 404 | 409 | 413 | 415 | 422 | 429 | 500,
-  code: ApiErrorCode,
-  message: string,
-) => {
-  const requestId = (
-    c as Context & {
-      get: (key: "requestId") => string | undefined;
-    }
-  ).get?.("requestId");
-
-  return c.json(
-    {
-      error: {
-        code,
-        message,
-        requestId: requestId ?? "unknown-request-id",
-      },
-    },
-    status,
-  );
+const respondWithAppError = (c: Context, error: AppError): Response => {
+  return toErrorResponse(c, error);
 };
 
 export const fromHttpError = (c: Context, error: HttpError) =>
-  errorResponse(
-    c,
-    error.status,
-    error.code,
-    error.expose ? error.message : "서버 내부 오류가 발생했습니다.",
-  );
+  respondWithAppError(c, error);
 
 export const badRequest = (c: Context, message: string) =>
-  errorResponse(c, 400, "BAD_REQUEST", message);
+  respondWithAppError(c, AppError.badRequest(message));
 
 export const unauthorized = (c: Context, message = "로그인이 필요합니다.") =>
-  errorResponse(c, 401, "UNAUTHORIZED", message);
+  respondWithAppError(c, AppError.unauthorized(message));
 
 export const forbidden = (c: Context, message = "권한이 없습니다.") =>
-  errorResponse(c, 403, "FORBIDDEN", message);
+  respondWithAppError(c, AppError.forbidden(message));
 
 export const notFound = (c: Context, message = "대상을 찾을 수 없습니다.") =>
-  errorResponse(c, 404, "NOT_FOUND", message);
+  respondWithAppError(c, AppError.notFound(message));
 
 export const conflict = (c: Context, message: string) =>
-  errorResponse(c, 409, "CONFLICT", message);
+  respondWithAppError(c, AppError.conflict(message));
 
 export const payloadTooLarge = (c: Context, message: string) =>
-  errorResponse(c, 413, "BAD_REQUEST", message);
+  respondWithAppError(c, AppError.payloadTooLarge(message));
 
 export const unsupportedMediaType = (c: Context, message: string) =>
-  errorResponse(c, 415, "BAD_REQUEST", message);
+  respondWithAppError(c, AppError.unsupportedMediaType(message));
 
 export const unprocessableEntity = (c: Context, message: string) =>
-  errorResponse(c, 422, "BAD_REQUEST", message);
+  respondWithAppError(
+    c,
+    new AppError({
+      httpStatus: 422,
+      code: "BAD_REQUEST",
+      message,
+    }),
+  );
 
 export const internalError = (
   c: Context,
   message = "서버 내부 오류가 발생했습니다.",
-) => errorResponse(c, 500, "INTERNAL_ERROR", message);
+) =>
+  respondWithAppError(
+    c,
+    message === "서버 내부 오류가 발생했습니다."
+      ? AppError.internal(message)
+      : new AppError({
+          httpStatus: 500,
+          code: "INTERNAL_ERROR",
+          message,
+          expose: true,
+        }),
+  );

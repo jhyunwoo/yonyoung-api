@@ -132,7 +132,7 @@ export const getAuthCorsOrigins = (env?: Partial<AppBindings>): string[] => {
 
 type AuthCacheEntry = {
   envSignature: string;
-  instance: ReturnType<typeof betterAuth>;
+  instance: ReturnType<typeof createAuthWithEnv>;
 };
 
 const authCache = new WeakMap<D1Database, AuthCacheEntry>();

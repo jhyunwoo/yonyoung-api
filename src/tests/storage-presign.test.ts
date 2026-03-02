@@ -73,7 +73,7 @@ describe("createR2PresignService", () => {
   const mockGetSignedUrl = vi.mocked(getSignedUrl);
 
   beforeEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
     mockSend.mockReset();
     mockS3Client.mockClear();
     mockPutObjectCommand.mockClear();

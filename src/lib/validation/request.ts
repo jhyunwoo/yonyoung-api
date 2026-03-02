@@ -1,5 +1,6 @@
 import { Context } from "hono";
 import { ZodType } from "zod";
+import { AppError } from "../../shared/errors/AppError";
 
 type ParseResult<T> =
   | { success: true; data: T }
@@ -50,16 +51,45 @@ export const parseParams = <T>(
 export const parseBody = async <T>(
   c: Context,
   schema: ZodType<T>,
+  options?: {
+    maxBytes?: number;
+  },
 ): Promise<ParseResult<T>> => {
-  let raw: unknown;
+  const maxBytes = options?.maxBytes ?? 5 * 1024 * 1024;
+  const contentLengthHeader = c.req.header("content-length");
+  if (contentLengthHeader) {
+    const contentLength = Number(contentLengthHeader);
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      throw AppError.payloadTooLarge(
+        `요청 본문이 허용된 최대 크기(${maxBytes} bytes)를 초과했습니다.`,
+      );
+    }
+  }
+
+  const encoder = new TextEncoder();
+  let rawText: string;
   try {
-    raw = await c.req.json();
+    rawText = await c.req.text();
   } catch {
     return { success: false, message: "Malformed JSON in request body" };
   }
 
-  if (raw === null || raw === undefined) {
+  if (!rawText || rawText.trim().length === 0) {
     return { success: false, message: "JSON 본문이 필요합니다." };
+  }
+
+  const bytes = encoder.encode(rawText).byteLength;
+  if (bytes > maxBytes) {
+    throw AppError.payloadTooLarge(
+      `요청 본문이 허용된 최대 크기(${maxBytes} bytes)를 초과했습니다.`,
+    );
+  }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(rawText);
+  } catch {
+    return { success: false, message: "Malformed JSON in request body" };
   }
 
   const parsed = schema.safeParse(raw);

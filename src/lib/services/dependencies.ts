@@ -3,6 +3,9 @@ import { getActorFromSession } from "../auth/session";
 import { createAuth } from "../auth";
 import { Actor } from "../authorization/types";
 import HonoAppType from "../../types/honoAppType";
+import { parseBooleanEnv, parseNumberEnv } from "../../bindings/env";
+import { resolveD1Database } from "../../infra/db/client";
+import { resolveR2Bucket } from "../../infra/r2/client";
 import { DataService, PresignService } from "./types";
 import { createR2PresignService } from "../storage/presign";
 import type { OpenAPIDocument } from "../openapi/merge";
@@ -39,33 +42,6 @@ export type AppDependencies = {
   shouldRequireDocsAuth: ShouldRequireDocsAuth;
 };
 
-const parseBooleanString = (
-  value: string | undefined,
-  fallback: boolean,
-): boolean => {
-  if (!value) {
-    return fallback;
-  }
-
-  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
-};
-
-const parseNumberString = (
-  value: string | undefined,
-  fallback: number,
-): number => {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number(value.trim());
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-
-  return parsed;
-};
-
 export const createDefaultDependencies = (): AppDependencies => ({
   resolveActor: getActorFromSession,
   shouldRequireDocsAuth: (c) => resolveDocsAuthEnabled(c.env),
@@ -75,18 +51,19 @@ export const createDefaultDependencies = (): AppDependencies => ({
       return cached;
     }
 
+    const database = resolveD1Database(c.env);
     const sessionMode = resolveD1SessionMode(c.env.D1_SESSION_CONSISTENCY);
-    const session = createD1SequentialSession(c.env.db, {
+    const session = createD1SequentialSession(database, {
       mode: sessionMode,
     });
 
-    const retryEnabled = parseBooleanString(c.env.D1_WRITE_RETRY_ENABLED, true);
+    const retryEnabled = parseBooleanEnv(c.env.D1_WRITE_RETRY_ENABLED, true);
     const databaseWithRetry = createRetryingD1Database(session.database, {
       enabled: retryEnabled,
       options: {
-        maxRetries: parseNumberString(c.env.D1_WRITE_RETRY_MAX_RETRIES, 2),
-        baseDelayMs: parseNumberString(c.env.D1_WRITE_RETRY_BASE_DELAY_MS, 25),
-        maxDelayMs: parseNumberString(c.env.D1_WRITE_RETRY_MAX_DELAY_MS, 500),
+        maxRetries: parseNumberEnv(c.env.D1_WRITE_RETRY_MAX_RETRIES, 2),
+        baseDelayMs: parseNumberEnv(c.env.D1_WRITE_RETRY_BASE_DELAY_MS, 25),
+        maxDelayMs: parseNumberEnv(c.env.D1_WRITE_RETRY_MAX_DELAY_MS, 500),
       },
     });
 
@@ -95,9 +72,10 @@ export const createDefaultDependencies = (): AppDependencies => ({
     return dataService;
   },
   getPresignService: (c) => createR2PresignService(c.env),
-  readR2TotalUsageBytes: (c) => readR2TotalUsageBytes(c.env.r2),
+  readR2TotalUsageBytes: (c) => readR2TotalUsageBytes(resolveR2Bucket(c.env)),
   getAuthOpenApiSchema: async (c) => {
-    const auth = createAuth(c.env.db, c.env);
+    const database = resolveD1Database(c.env);
+    const auth = createAuth(database, c.env);
     const request = new Request(
       new URL("/api/auth/open-api/generate-schema", c.req.url),
       {

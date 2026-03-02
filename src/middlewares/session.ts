@@ -13,13 +13,9 @@ export const sessionMiddleware = (
   return async (c, next) => {
     c.set("actor", null);
 
-    if (!shouldSkipSessionResolution(c.req.path) && c.env?.db) {
-      try {
-        const actor = await dependencies.resolveActor(c);
-        c.set("actor", actor);
-      } catch {
-        c.set("actor", null);
-      }
+    if (!shouldSkipSessionResolution(c.req.path) && (c.env?.db || c.env?.DB)) {
+      const actor = await dependencies.resolveActor(c);
+      c.set("actor", actor);
     }
 
     await next();

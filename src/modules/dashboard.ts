@@ -13,6 +13,7 @@ import {
   readR2TotalUsageBytes,
   R2_STORAGE_LIMIT_BYTES,
 } from "../lib/storage/usage";
+import { resolveR2Bucket } from "../infra/r2/client";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -64,7 +65,9 @@ export const registerDashboardRoutes = (
       .getAdminDashboardStats(query.data.generationSortOrder ?? null);
 
     try {
-      const r2StorageUsedBytes = await readR2TotalUsageBytes(c.env.r2);
+      const r2StorageUsedBytes = await readR2TotalUsageBytes(
+        resolveR2Bucket(c.env),
+      );
       return ok(c, {
         ...stats,
         r2StorageUsedBytes,
