@@ -13,6 +13,10 @@ describe("worker runtime integration", () => {
       vars: {
         BETTER_AUTH_URL: "http://localhost:8787",
         BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000",
+        BETTER_AUTH_SECRET:
+          "test-only-better-auth-secret-at-least-32-characters",
+        GOOGLE_CLIENT_ID: "test-google-client-id",
+        GOOGLE_CLIENT_SECRET: "test-google-client-secret",
         R2_S3_ENDPOINT: "https://example-account.r2.cloudflarestorage.com",
         R2_ACCESS_KEY_ID: "key",
         R2_SECRET_ACCESS_KEY: "secret",
