@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { REQUIRED_DESCRIPTION_SECTIONS } from "../lib/openapi/descriptions";
 import { OpenAPIDocument } from "../lib/openapi/merge";
-import { createActor, expectErrorCode } from "./test-helpers";
+import { createActor } from "./test-helpers";
 
 const authOpenApiFixture: OpenAPIDocument = {
   openapi: "3.1.1",
@@ -70,20 +70,18 @@ const createDocsApp = (input: CreateDocsAppInput = {}) => {
 };
 
 describe("OpenAPI docs routes", () => {
-  it("docs 인증 활성화 시 비로그인 접근은 /api/docs에서 401을 반환한다", async () => {
+  it("docs 인증 활성화 여부와 무관하게 비로그인 접근은 /api/docs에서 200을 반환한다", async () => {
     const app = createDocsApp({ requireDocsAuth: true });
 
     const response = await app.request("/api/docs");
-    expect(response.status).toBe(401);
-    await expectErrorCode(response, "UNAUTHORIZED");
+    expect(response.status).toBe(200);
   });
 
-  it("docs 인증 활성화 시 비로그인 접근은 /api/openapi.json에서 401을 반환한다", async () => {
+  it("docs 인증 활성화 여부와 무관하게 비로그인 접근은 /api/openapi.json에서 200을 반환한다", async () => {
     const app = createDocsApp({ requireDocsAuth: true });
 
     const response = await app.request("/api/openapi.json");
-    expect(response.status).toBe(401);
-    await expectErrorCode(response, "UNAUTHORIZED");
+    expect(response.status).toBe(200);
   });
 
   it("docs 인증 활성화 시 로그인 사용자는 /api/docs와 /api/openapi.json에 접근할 수 있다", async () => {

@@ -2,7 +2,6 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { Scalar } from "@scalar/hono-api-reference";
 import type { Context } from "hono";
 import { OPENAPI_BASE_DOCUMENT, OPENAPI_JSON_PATHS, OPENAPI_UI_PATHS } from "../app/openapi";
-import { requireActor } from "../lib/http/authz";
 import { internalError } from "../lib/http/response";
 import { enrichOpenApiDocument } from "../lib/openapi/enrich";
 import { mergeOpenApiDocuments } from "../lib/openapi/merge";
@@ -28,7 +27,6 @@ const createOpenApiJsonRoute = (path: string, operationId: string) =>
           },
         },
       },
-      401: errorResponses[401],
       500: errorResponses[500],
     },
   });
@@ -48,25 +46,9 @@ const createDocsUiRoute = (path: string, operationId: string) =>
           },
         },
       },
-      401: errorResponses[401],
+      500: errorResponses[500],
     },
   });
-
-const ensureDocsAccess = async (
-  c: Context<HonoAppType>,
-  dependencies: AppDependencies,
-) => {
-  if (!dependencies.shouldRequireDocsAuth(c)) {
-    return null;
-  }
-
-  const actorResult = await requireActor(c, dependencies);
-  if ("response" in actorResult) {
-    return actorResult.response;
-  }
-
-  return null;
-};
 
 const buildOpenApiDocument = async (
   c: Context<HonoAppType>,
@@ -99,11 +81,6 @@ export const registerDocsRoutes = (
 
   for (const route of openApiJsonRoutes) {
     app.openapi(route, async (c): Promise<any> => {
-      const authResponse = await ensureDocsAccess(c, dependencies);
-      if (authResponse) {
-        return authResponse;
-      }
-
       try {
         const document = await buildOpenApiDocument(c, app, dependencies);
         return c.json(document, 200);
@@ -125,12 +102,11 @@ export const registerDocsRoutes = (
 
   for (const route of docsUiRoutes) {
     app.openapi(route, async (c): Promise<any> => {
-      const authResponse = await ensureDocsAccess(c, dependencies);
-      if (authResponse) {
-        return authResponse;
+      try {
+        return scalarReference(c, async () => {});
+      } catch {
+        return internalError(c, "OpenAPI 문서 UI를 렌더링하지 못했습니다.");
       }
-
-      return scalarReference(c, async () => {});
     });
   }
 };

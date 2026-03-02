@@ -861,10 +861,7 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
     ],
     responseGuide: ["`200`: OpenAPI 3.1 JSON 문서 반환"],
     errorGuide: ["`500`: 스키마 병합 또는 생성 실패"],
-    permission: [
-      "`DOCS_AUTH_IN_PROD`가 `true`인 환경에서는 로그인 세션이 필요합니다.",
-      "플래그가 비활성화된 환경에서는 공개 접근이 가능합니다.",
-    ],
+    permission: ["공개 엔드포인트입니다."],
   }),
   getScalarApiReference: mkSpec({
     summary: "Scalar API 문서 UI 조회",
@@ -877,10 +874,7 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
     ],
     responseGuide: ["`200`: `text/html` 문서 UI 반환"],
     errorGuide: ["일반적으로 문서 렌더링 실패 외 비즈니스 오류를 반환하지 않습니다."],
-    permission: [
-      "`DOCS_AUTH_IN_PROD`가 `true`인 환경에서는 로그인 세션이 필요합니다.",
-      "플래그가 비활성화된 환경에서는 공개 접근이 가능합니다.",
-    ],
+    permission: ["공개 엔드포인트입니다."],
   }),
   getHealth: mkSpec({
     summary: "시스템 인프라 헬스 체크",
