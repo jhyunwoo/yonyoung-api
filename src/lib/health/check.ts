@@ -80,14 +80,23 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
 };
 
+const hasFunction = (value: Record<string, unknown>, key: string): boolean => {
+  return typeof value[key] === "function";
+};
+
+const isFetcherLike = (value: Record<string, unknown>): boolean => {
+  return hasFunction(value, "fetch");
+};
+
 const isD1Database = (value: unknown): value is D1Database => {
   if (!isRecord(value)) {
     return false;
   }
 
   return (
-    typeof value.prepare === "function" &&
-    typeof value.batch === "function"
+    !isFetcherLike(value) &&
+    hasFunction(value, "prepare") &&
+    hasFunction(value, "batch")
   );
 };
 
@@ -97,9 +106,10 @@ const isR2Bucket = (value: unknown): value is R2Bucket => {
   }
 
   return (
-    typeof value.put === "function" &&
-    typeof value.head === "function" &&
-    typeof value.delete === "function"
+    !isFetcherLike(value) &&
+    hasFunction(value, "put") &&
+    hasFunction(value, "head") &&
+    hasFunction(value, "delete")
   );
 };
 
@@ -111,8 +121,9 @@ const isDurableObjectNamespace = (
   }
 
   return (
-    typeof value.idFromName === "function" &&
-    typeof value.get === "function"
+    !isFetcherLike(value) &&
+    hasFunction(value, "idFromName") &&
+    hasFunction(value, "get")
   );
 };
 
@@ -121,7 +132,7 @@ const isFetcherBinding = (value: unknown): value is Fetcher => {
     return false;
   }
 
-  return typeof value.fetch === "function";
+  return isFetcherLike(value);
 };
 
 const collectBindings = <T>(

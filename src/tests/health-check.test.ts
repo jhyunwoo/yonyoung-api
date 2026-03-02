@@ -2,6 +2,27 @@ import { describe, expect, it } from "vitest";
 import { runInfrastructureHealthChecks } from "../lib/health/check";
 import type { AppBindings } from "../types/honoAppType";
 
+const createRpcLikeFetcher = (): Fetcher => {
+  return new Proxy(
+    {
+      fetch: async () => new Response(null, { status: 404 }),
+    },
+    {
+      get: (target, property, receiver) => {
+        if (Reflect.has(target, property)) {
+          return Reflect.get(target, property, receiver);
+        }
+
+        return () => {
+          throw new Error(
+            `The RPC receiver does not implement the method "${String(property)}".`,
+          );
+        };
+      },
+    },
+  ) as unknown as Fetcher;
+};
+
 const createHealthyEnv = (): Partial<AppBindings> & Record<string, unknown> => {
   const objects = new Map<string, Uint8Array>();
 
@@ -45,9 +66,7 @@ const createHealthyEnv = (): Partial<AppBindings> & Record<string, unknown> => {
           fetch: async () => new Response(null, { status: 404 }),
         }) as unknown as DurableObjectStub,
     } as unknown as DurableObjectNamespace,
-    ASSETS: {
-      fetch: async () => new Response(null, { status: 404 }),
-    } as unknown as Fetcher,
+    ASSETS: createRpcLikeFetcher(),
     NOTIFIER_SERVICE: {
       fetch: async () => new Response(null, { status: 204 }),
     } as unknown as Fetcher,
@@ -81,6 +100,13 @@ describe("runInfrastructureHealthChecks", () => {
           check.service === "durable_object" && check.status === "healthy",
       ),
     ).toBe(true);
+    expect(
+      report.checks.some(
+        (check) =>
+          check.binding === "ASSETS" &&
+          ["d1", "r2", "durable_object"].includes(check.service),
+      ),
+    ).toBe(false);
   });
 
   it("필수 의존성이 누락되면 unhealthy를 반환한다", async () => {

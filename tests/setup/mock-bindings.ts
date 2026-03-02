@@ -117,12 +117,34 @@ export const createMockR2Bucket = (): R2Bucket => {
   return bucket as unknown as R2Bucket;
 };
 
+const createMockAssetsFetcher = (): Fetcher => {
+  return new Proxy(
+    {
+      fetch: async () => new Response(null, { status: 404 }),
+    },
+    {
+      get: (target, property, receiver) => {
+        if (Reflect.has(target, property)) {
+          return Reflect.get(target, property, receiver);
+        }
+
+        return () => {
+          throw new Error(
+            `The RPC receiver does not implement the method "${String(property)}".`,
+          );
+        };
+      },
+    },
+  ) as unknown as Fetcher;
+};
+
 export const createHealthyBindings = (): AppBindings => {
   return {
     db: createMockD1Database(),
     DB: createMockD1Database(),
     r2: createMockR2Bucket(),
     R2: createMockR2Bucket(),
+    ASSETS: createMockAssetsFetcher(),
     R2_S3_ENDPOINT: "https://example-account.r2.cloudflarestorage.com",
     R2_ACCESS_KEY_ID: "key",
     R2_SECRET_ACCESS_KEY: "secret",
