@@ -14,9 +14,41 @@
 	"observability": {
 		"enabled": true
 	},
+	"placement": {
+		"mode": "smart",
+	},
 	"compatibility_flags": [
 		"nodejs_compat"
-	]
+	],
+	"r2_buckets": [
+		{
+			"bucket_name": "yonyoung-storage",
+			"binding": "r2",
+			"remote": false,
+		},
+	],
+	"d1_databases": [
+		{
+			"binding": "db",
+			"database_name": "yonyoung-db",
+			"database_id": "2b8373ca-0dd5-486f-aa2f-4847e5e2b79a",
+			"migrations_dir": "drizzle",
+			"remote": false,
+		},
+	],
+	"vars": {
+		"BETTER_AUTH_URL": "https://api.yonyoung.moveto.kr",
+		"BETTER_AUTH_TRUSTED_ORIGINS": "https://yonyoung.moveto.kr",
+		"R2_PUBLIC_BASE_URL": "https://storage.yonyoung.moveto.kr",
+		"VAPID_PUBLIC_KEY": "",
+		"VAPID_SUBJECT": "",
+		"CSP_REPORT_ONLY": "true",
+		"D1_SESSION_CONSISTENCY": "off",
+		"D1_WRITE_RETRY_ENABLED": "true",
+		"D1_WRITE_RETRY_MAX_RETRIES": "2",
+		"D1_WRITE_RETRY_BASE_DELAY_MS": "25",
+		"D1_WRITE_RETRY_MAX_DELAY_MS": "500",
+	},
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

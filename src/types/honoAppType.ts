@@ -1,0 +1,40 @@
+import { Actor } from "../lib/authorization/types";
+import type { DataService } from "../lib/services/types";
+
+export type AppBindings = CloudflareBindings & {
+  r2?: R2Bucket;
+  BETTER_AUTH_URL?: string;
+  BETTER_AUTH_TRUSTED_ORIGINS?: string;
+  BETTER_AUTH_SECRET?: string;
+  BETTER_AUTH_EMAIL_AND_PASSWORD_ENABLED?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  R2_S3_ENDPOINT?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
+  R2_BUCKET?: string;
+  R2_PUBLIC_BASE_URL?: string;
+  DOCS_AUTH_IN_PROD?: string;
+  D1_SESSION_CONSISTENCY?: string;
+  D1_WRITE_RETRY_ENABLED?: string;
+  D1_WRITE_RETRY_MAX_RETRIES?: string;
+  D1_WRITE_RETRY_BASE_DELAY_MS?: string;
+  D1_WRITE_RETRY_MAX_DELAY_MS?: string;
+  CSP_REPORT_ONLY?: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
+};
+
+type HonoAppType = {
+  Bindings: AppBindings;
+  Variables: {
+    actor: Actor | null;
+    requestId: string;
+    startedAt: number;
+    cacheStatus: "hit" | "miss" | "stale" | "bypass" | "skip-store" | null;
+    dataService: DataService | null;
+  };
+};
+
+export default HonoAppType;
