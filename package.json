@@ -5,6 +5,8 @@
 		"dev": "wrangler dev",
 		"deploy": "wrangler deploy --minify",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings",
+		"lint": "eslint src --max-warnings 0",
+		"check-types": "tsc --noEmit",
 		"test": "vitest run",
 		"test:integration": "vitest run src/tests/worker.runtime.integration.test.ts",
 		"test:watch": "vitest",
@@ -24,11 +26,13 @@
 		"zod": "^4.3.6"
 	},
 	"devDependencies": {
+		"@eslint/js": "^10.0.1",
 		"@types/node": "^25.3.2",
 		"@types/web-push": "^3.6.4",
 		"@vitest/coverage-v8": "^4.0.18",
 		"drizzle-kit": "^0.31.9",
 		"eslint": "^9.39.3",
+		"typescript-eslint": "^8.56.1",
 		"vitest": "^4.0.18",
 		"wrangler": "^4.69.0"
 	}
