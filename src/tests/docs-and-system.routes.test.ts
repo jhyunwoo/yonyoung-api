@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import packageJson from "../../package.json";
 import { createTestApp, expectErrorCode, readJson } from "./test-helpers";
 
 describe("docs and system routes", /** describe 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => {
@@ -94,5 +95,22 @@ describe("docs and system routes", /** describe 실행 과정에서 필요한 �
         (check) => check.service === "r2" && check.status === "healthy",
       ),
     ).toBe(true);
+  });
+
+  it("/는 API 메타 정보를 JSON으로 반환한다", async () => {
+    const app = createTestApp({ actor: null, shouldRequireDocsAuth: false });
+
+    const response = await app.request("/");
+    expect(response.status).toBe(200);
+
+    const body = await readJson<{
+      api: string;
+      version: string;
+      serverTime: string;
+    }>(response);
+
+    expect(body.api).toBe("yonyoung-api");
+    expect(body.version).toBe(packageJson.version);
+    expect(Number.isNaN(Date.parse(body.serverTime))).toBe(false);
   });
 });

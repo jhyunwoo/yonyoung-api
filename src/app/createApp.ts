@@ -4,6 +4,7 @@ import {
   createRoute,
   z,
 } from "@hono/zod-openapi";
+import packageJson from "../../package.json";
 import type HonoAppType from "../types/honoAppType";
 import { AppError } from "../shared/errors/AppError";
 import { notFound } from "../lib/http/response";
@@ -20,6 +21,12 @@ import { loggerMiddleware } from "./middleware/logger";
 import { maxBodySizeMiddleware } from "./middleware/body-size";
 import { requestIdMiddleware } from "./middleware/requestId";
 import { apiSecurityHeadersMiddleware } from "./middleware/securityHeaders";
+
+const API_NAME = "yonyoung-api" as const;
+const API_VERSION =
+  typeof packageJson.version === "string" && packageJson.version.trim().length > 0
+    ? packageJson.version
+    : "0.0.0";
 
 const healthCheckSchema = z.object({
   service: z.enum([
@@ -144,6 +151,14 @@ export const createApp = (partialDependencies?: Partial<AppDependencies>) => {
   app.use("/ui", apiSecurityHeadersMiddleware);
 
   app.use("/api/*", sessionMiddleware(dependencies));
+
+  app.get("/", (c) => {
+    return c.json({
+      api: API_NAME,
+      version: API_VERSION,
+      serverTime: new Date().toISOString(),
+    });
+  });
 
   mountDomainRouters(app, dependencies, defaultValidationHook);
 
