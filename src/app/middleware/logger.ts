@@ -182,7 +182,7 @@ export const loggerMiddleware: MiddlewareHandler<HonoAppType> = async (
               colo,
             ],
             doubles: [roundedLatencyMs],
-            indexes: [c.res.status],
+            indexes: [String(c.res.status)],
           });
         });
       }

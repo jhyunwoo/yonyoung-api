@@ -146,7 +146,7 @@ describe("logger middleware", () => {
     const payload = writeDataPoint.mock.calls[0]?.[0] as {
       blobs: string[];
       doubles: number[];
-      indexes: number[];
+      indexes: string[];
     };
     expect(payload.blobs).toEqual([
       "GET",
@@ -157,7 +157,7 @@ describe("logger middleware", () => {
     ]);
     expect(payload.doubles).toHaveLength(1);
     expect(typeof payload.doubles[0]).toBe("number");
-    expect(payload.indexes).toEqual([200]);
+    expect(payload.indexes).toEqual(["200"]);
     consoleSpy.mockRestore();
   });
 
