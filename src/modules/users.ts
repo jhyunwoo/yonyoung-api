@@ -172,7 +172,6 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
     }
 
     if (actorResult.actor.role === "manager") {
-      const data = await dependencies.getDataService(c).listUsers();
       const actorGenerationIdSet = new Set(actorResult.actor.generationIds ?? []);
       if (actorResult.actor.generationId) {
         actorGenerationIdSet.add(actorResult.actor.generationId);
@@ -181,26 +180,11 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
       if (actorGenerationIdSet.size === 0) {
         return ok(c, []);
       }
-      return ok(
-        c,
-        data.filter(
-          /**
-           * data.filter 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다.
-           * @param candidate 대상을 식별하기 위한 ID 값입니다.
-           * @returns 함수 실행 결과를 반환합니다.
-           * @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다.
-           */
-          (candidate) => {
-            const candidateGenerationIds =
-              (candidate.generationIds?.length ?? 0) > 0
-                ? candidate.generationIds ?? []
-                : candidate.generationId
-                  ? [candidate.generationId]
-                  : [];
-            return candidateGenerationIds.some((id) => actorGenerationIdSet.has(id));
-          },
-        ),
-      );
+
+      const data = await dependencies
+        .getDataService(c)
+        .listUsersByGenerationIds(Array.from(actorGenerationIdSet));
+      return ok(c, data);
     }
 
     if (isMemberLikeRole(actorResult.actor.role)) {
@@ -318,8 +302,9 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
     }
 
     const dataService = dependencies.getDataService(c);
-    const users = await dataService.listUsers();
-    const userById = new Map(users.map((user) => [user.id, user]));
+    const targetUserIds = Array.from(new Set(body.data.userIds));
+    const users = await dataService.listUsersByIds(targetUserIds);
+    const userById = new Map(users.map((candidate) => [candidate.id, candidate]));
     const targetUsers = body.data.userIds.map((userId) => userById.get(userId) ?? null);
     if (targetUsers.some((user) => user === null)) {
       return badRequest(c, "일부 대상 사용자를 찾을 수 없습니다.");
@@ -338,9 +323,7 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
       return forbidden(c, "다른 회장의 권한은 변경할 수 없습니다.");
     }
 
-    const presidentCount = users.filter(
-      (candidate) => normalizeRole(candidate.role) === "president",
-    ).length;
+    const presidentCount = await dataService.countUsersByRole("president");
     const demotedPresidentCount = targetUsers.filter(
       (candidate) =>
         candidate !== null &&

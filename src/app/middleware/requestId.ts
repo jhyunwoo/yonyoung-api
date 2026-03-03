@@ -25,6 +25,7 @@ export const requestIdMiddleware: MiddlewareHandler<HonoAppType> = async (
   c.set("correlationId", requestId);
   c.set("startedAt", performance.now());
   c.set("cacheStatus", null);
+  c.set("actorResolved", false);
   c.set("dataService", null);
 
   await next();

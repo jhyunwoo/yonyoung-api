@@ -475,18 +475,22 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
   });
 
   it("bulk-role 권한 일괄 변경은 vice_president에게 허용된다", async () => {
-    const listUsers = fn(async () => [
+    const listUsersByIds = fn(async () => [
       createUser({ id: IDs.member, role: "regular_member" }),
       createUser({ id: IDs.otherUser, role: "associate_member" }),
-      createUser({ id: IDs.president, role: "president" }),
     ]);
+    const countUsersByRole = fn(async () => 1);
     const bulkUpdateUsersRole = fn(async () => [
       createUser({ id: IDs.member, role: "manager" }),
       createUser({ id: IDs.otherUser, role: "manager" }),
     ]);
     const app = createTestApp({
       actor: createActor("vice_president", IDs.vicePresident),
-      dataService: createDataServiceMock({ listUsers, bulkUpdateUsersRole }),
+      dataService: createDataServiceMock({
+        listUsersByIds,
+        countUsersByRole,
+        bulkUpdateUsersRole,
+      }),
     });
 
     const response = await app.request("/api/users/bulk-role", {
@@ -504,6 +508,8 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
       userIds: [IDs.member, IDs.otherUser],
       role: "manager",
     });
+    expect(listUsersByIds).toHaveBeenCalledWith([IDs.member, IDs.otherUser]);
+    expect(countUsersByRole).toHaveBeenCalledWith("president");
   });
 
   it("bulk-role 요청에서 manager는 403을 반환한다", async () => {
@@ -532,14 +538,14 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
 
   it("bulk-role 요청에서 회장은 다른 회장 권한을 변경할 수 없어 403을 반환한다", async () => {
     const bulkUpdateUsersRole = fn(async () => []);
+    const listUsersByIds = fn(async () => [
+      createUser({ id: IDs.otherUser, role: "president" }),
+    ]);
     const app = createTestApp({
       actor: createActor("president", IDs.president),
       dataService: createDataServiceMock({
-        listUsers: fn(async () => [
-          createUser({ id: IDs.president, role: "president" }),
-          createUser({ id: IDs.otherUser, role: "president" }),
-          createUser({ id: IDs.member, role: "regular_member" }),
-        ]),
+        listUsersByIds,
+        countUsersByRole: fn(async () => 2),
         bulkUpdateUsersRole,
       }),
     });
@@ -556,14 +562,19 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     expect(response.status).toBe(403);
     await expectErrorCode(response, "FORBIDDEN");
     expect(bulkUpdateUsersRole).not.toHaveBeenCalled();
+    expect(listUsersByIds).toHaveBeenCalledWith([IDs.otherUser]);
   });
 
   it("bulk-role 요청에서 대상 사용자 일부가 없으면 400을 반환한다", async () => {
     const bulkUpdateUsersRole = fn(async () => []);
+    const listUsersByIds = fn(async () => [
+      createUser({ id: IDs.member, role: "regular_member" }),
+    ]);
     const app = createTestApp({
       actor: createActor("vice_president", IDs.vicePresident),
       dataService: createDataServiceMock({
-        listUsers: fn(async () => [createUser({ id: IDs.member, role: "regular_member" })]),
+        listUsersByIds,
+        countUsersByRole: fn(async () => 1),
         bulkUpdateUsersRole,
       }),
     });
@@ -580,17 +591,19 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     expect(response.status).toBe(400);
     await expectErrorCode(response, "BAD_REQUEST");
     expect(bulkUpdateUsersRole).not.toHaveBeenCalled();
+    expect(listUsersByIds).toHaveBeenCalledWith([IDs.member, IDs.otherUser]);
   });
 
   it("bulk-role 요청에서 회장 1인을 하향하면 400을 반환한다", async () => {
     const bulkUpdateUsersRole = fn(async () => []);
+    const listUsersByIds = fn(async () => [
+      createUser({ id: IDs.president, role: "president" }),
+    ]);
     const app = createTestApp({
       actor: createActor("president", IDs.president),
       dataService: createDataServiceMock({
-        listUsers: fn(async () => [
-          createUser({ id: IDs.president, role: "president" }),
-          createUser({ id: IDs.member, role: "regular_member" }),
-        ]),
+        listUsersByIds,
+        countUsersByRole: fn(async () => 1),
         bulkUpdateUsersRole,
       }),
     });
@@ -607,6 +620,7 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     expect(response.status).toBe(400);
     await expectErrorCode(response, "BAD_REQUEST");
     expect(bulkUpdateUsersRole).not.toHaveBeenCalled();
+    expect(listUsersByIds).toHaveBeenCalledWith([IDs.president]);
   });
 
   it("resource-history 조회는 부회장에게 허용되며 기본 limit=100을 사용한다", async () => {

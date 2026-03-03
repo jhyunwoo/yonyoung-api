@@ -6,6 +6,7 @@ export type Bindings = CloudflareBindings & {
   db?: D1Database;
   R2?: R2Bucket;
   r2?: R2Bucket;
+  PERF_ANALYTICS?: AnalyticsEngineDataset;
   BETTER_AUTH_URL?: string;
   BETTER_AUTH_TRUSTED_ORIGINS?: string;
   BETTER_AUTH_SECRET?: string;
@@ -23,6 +24,8 @@ export type Bindings = CloudflareBindings & {
   D1_WRITE_RETRY_MAX_RETRIES?: string;
   D1_WRITE_RETRY_BASE_DELAY_MS?: string;
   D1_WRITE_RETRY_MAX_DELAY_MS?: string;
+  PERF_ANALYTICS_ENABLED?: string;
+  PERF_ANALYTICS_SAMPLE_RATE?: string;
   CSP_REPORT_ONLY?: string;
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
@@ -35,6 +38,7 @@ export type AppVariables = {
   correlationId: string;
   startedAt: number;
   cacheStatus: "hit" | "miss" | "stale" | "bypass" | "skip-store" | null;
+  actorResolved: boolean;
   dataService: DataService | null;
 };
 

@@ -304,6 +304,10 @@ export const createDataServiceMock = (
     listAuditLogs: async () => [],
     getLatestAuditActor: async () => null,
     listLatestAuditActors: async () => ({}),
+    listUsers: async () => [],
+    listUsersByIds: async () => [],
+    listUsersByGenerationIds: async () => [],
+    countUsersByRole: async () => 0,
     listUserResourceHistory: async () => ({ items: [] }),
   };
 

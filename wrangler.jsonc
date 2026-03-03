@@ -36,6 +36,12 @@
 			"remote": false,
 		},
 	],
+	"analytics_engine_datasets": [
+		{
+			"binding": "PERF_ANALYTICS",
+			"dataset": "yonyoung_api_perf",
+		},
+	],
 	"vars": {
 		"BETTER_AUTH_URL": "https://api.yonyoung.moveto.kr",
 		"BETTER_AUTH_TRUSTED_ORIGINS": "https://yonyoung.moveto.kr",
@@ -48,6 +54,8 @@
 		"D1_WRITE_RETRY_MAX_RETRIES": "2",
 		"D1_WRITE_RETRY_BASE_DELAY_MS": "25",
 		"D1_WRITE_RETRY_MAX_DELAY_MS": "500",
+		"PERF_ANALYTICS_ENABLED": "false",
+		"PERF_ANALYTICS_SAMPLE_RATE": "0.2",
 	},
 	/**
 	 * Smart Placement

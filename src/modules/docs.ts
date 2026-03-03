@@ -2,15 +2,30 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { Scalar } from "@scalar/hono-api-reference";
 import type { Context } from "hono";
 import { OPENAPI_BASE_DOCUMENT, OPENAPI_JSON_PATHS, OPENAPI_UI_PATHS } from "../app/openapi";
+import { runInBackground } from "../lib/http/background-task";
 import { internalError } from "../lib/http/response";
 import { enrichOpenApiDocument } from "../lib/openapi/enrich";
-import { mergeOpenApiDocuments } from "../lib/openapi/merge";
+import { mergeOpenApiDocuments, type OpenAPIDocument } from "../lib/openapi/merge";
 import { errorResponses } from "../lib/openapi/responses";
 import { ApiOpenApiDocumentSchema } from "../lib/openapi/schemas";
 import type { AppDependencies } from "../lib/services/dependencies";
 import HonoAppType from "../types/honoAppType";
 
 type App = OpenAPIHono<HonoAppType>;
+
+const OPENAPI_CACHE_TTL_MS = 120_000;
+const OPENAPI_CACHE_STALE_MS = 300_000;
+const DOCS_CACHE_CONTROL =
+  "public, max-age=30, s-maxage=120, stale-while-revalidate=300";
+
+type OpenApiCacheEntry = {
+  document: OpenAPIDocument;
+  expiresAt: number;
+  staleUntil: number;
+};
+
+const openApiDocumentCache = new Map<string, OpenApiCacheEntry>();
+const openApiDocumentRefreshTasks = new Map<string, Promise<void>>();
 
 const createOpenApiJsonRoute = (path: string, operationId: string) =>
   createRoute({
@@ -64,6 +79,34 @@ const buildOpenApiDocument = async (
   return enrichOpenApiDocument(merged);
 };
 
+const readAuthSchemaCacheSignature = (c: Context<HonoAppType>): string => {
+  const env = c.env;
+  return [
+    env?.BETTER_AUTH_URL ?? "",
+    env?.BETTER_AUTH_TRUSTED_ORIGINS ?? "",
+    env?.BETTER_AUTH_EMAIL_AND_PASSWORD_ENABLED ?? "",
+    env?.GOOGLE_CLIENT_ID ?? "",
+    env?.GOOGLE_CLIENT_SECRET ?? "",
+  ].join("|");
+};
+
+const readOpenApiDocumentCacheKey = (c: Context<HonoAppType>): string => {
+  return `${new URL(c.req.url).origin}|${readAuthSchemaCacheSignature(c)}`;
+};
+
+const cacheOpenApiDocument = (cacheKey: string, document: OpenAPIDocument): void => {
+  const now = Date.now();
+  openApiDocumentCache.set(cacheKey, {
+    document,
+    expiresAt: now + OPENAPI_CACHE_TTL_MS,
+    staleUntil: now + OPENAPI_CACHE_TTL_MS + OPENAPI_CACHE_STALE_MS,
+  });
+};
+
+const setDocsCacheHeaders = (c: Context<HonoAppType>): void => {
+  c.header("Cache-Control", DOCS_CACHE_CONTROL);
+};
+
 /**
  * registerDocsRoutes 생성/등록 절차를 수행해 시스템 상태를 갱신합니다.
  * @param app 함수 로직에서 사용하는 입력값입니다.
@@ -81,8 +124,43 @@ export const registerDocsRoutes = (
 
   for (const route of openApiJsonRoutes) {
     app.openapi(route, async (c): Promise<any> => {
+      const cacheKey = readOpenApiDocumentCacheKey(c);
+      const now = Date.now();
+      const cached = openApiDocumentCache.get(cacheKey);
+
+      if (cached && now <= cached.expiresAt) {
+        setDocsCacheHeaders(c);
+        return c.json(cached.document, 200);
+      }
+
+      if (cached && now <= cached.staleUntil) {
+        if (!openApiDocumentRefreshTasks.has(cacheKey)) {
+          const refreshTask = (async () => {
+            try {
+              const refreshedDocument = await buildOpenApiDocument(
+                c,
+                app,
+                dependencies,
+              );
+              cacheOpenApiDocument(cacheKey, refreshedDocument);
+            } finally {
+              openApiDocumentRefreshTasks.delete(cacheKey);
+            }
+          })();
+          openApiDocumentRefreshTasks.set(cacheKey, refreshTask);
+          await runInBackground(c, refreshTask, {
+            fallback: "fire-and-forget",
+          });
+        }
+
+        setDocsCacheHeaders(c);
+        return c.json(cached.document, 200);
+      }
+
       try {
         const document = await buildOpenApiDocument(c, app, dependencies);
+        cacheOpenApiDocument(cacheKey, document);
+        setDocsCacheHeaders(c);
         return c.json(document, 200);
       } catch {
         return internalError(c, "OpenAPI 문서를 생성하지 못했습니다.");
@@ -103,6 +181,7 @@ export const registerDocsRoutes = (
   for (const route of docsUiRoutes) {
     app.openapi(route, async (c): Promise<any> => {
       try {
+        setDocsCacheHeaders(c);
         return scalarReference(c, async () => {});
       } catch {
         return internalError(c, "OpenAPI 문서 UI를 렌더링하지 못했습니다.");

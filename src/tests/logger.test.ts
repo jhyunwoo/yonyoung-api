@@ -20,6 +20,7 @@ const createContext = (input?: {
   cacheStatus?: string;
   status?: number;
   headers?: HeadersInit;
+  env?: Record<string, unknown>;
 }) => {
   const variables = new Map<string, unknown>([
     ["requestId", input?.requestId ?? "request-id-1"],
@@ -40,6 +41,7 @@ const createContext = (input?: {
     executionCtx: {
       waitUntil: waitUntil.waitUntil,
     },
+    env: input?.env ?? {},
     set: (key: string, value: unknown) => {
       variables.set(key, value);
     },
@@ -118,5 +120,63 @@ describe("logger middleware", () => {
     expect(errorLog.event).toBe("request.failed");
     expect(errorLog.requestId).toBe("error-request-id");
     expect(String(errorLog.message)).not.toContain("super-secret");
+  });
+
+  it("성능 계측이 활성화되면 Analytics Engine에 샘플을 기록한다", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const writeDataPoint = vi.fn();
+    const { context, flushWaitUntil } = createContext({
+      cacheStatus: "hit",
+      headers: {
+        "cf-ray": "abcd1234-ICN",
+      },
+      env: {
+        PERF_ANALYTICS_ENABLED: "true",
+        PERF_ANALYTICS_SAMPLE_RATE: "1",
+        PERF_ANALYTICS: {
+          writeDataPoint,
+        },
+      },
+    });
+
+    await loggerMiddleware(context, async () => undefined);
+    await flushWaitUntil();
+
+    expect(writeDataPoint).toHaveBeenCalledTimes(1);
+    const payload = writeDataPoint.mock.calls[0]?.[0] as {
+      blobs: string[];
+      doubles: number[];
+      indexes: number[];
+    };
+    expect(payload.blobs).toEqual([
+      "GET",
+      "/api/public/activities",
+      "200",
+      "hit",
+      "ICN",
+    ]);
+    expect(payload.doubles).toHaveLength(1);
+    expect(typeof payload.doubles[0]).toBe("number");
+    expect(payload.indexes).toEqual([200]);
+    consoleSpy.mockRestore();
+  });
+
+  it("성능 계측 기록이 실패해도 요청 처리에는 영향을 주지 않는다", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const { context, flushWaitUntil } = createContext({
+      env: {
+        PERF_ANALYTICS_ENABLED: "true",
+        PERF_ANALYTICS_SAMPLE_RATE: "1",
+        PERF_ANALYTICS: {
+          writeDataPoint: () => {
+            throw new Error("wae-write-failed");
+          },
+        },
+      },
+    });
+
+    await expect(loggerMiddleware(context, async () => undefined)).resolves.toBeUndefined();
+    await flushWaitUntil();
+    consoleSpy.mockRestore();
   });
 });

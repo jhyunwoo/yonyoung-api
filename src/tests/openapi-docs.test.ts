@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { REQUIRED_DESCRIPTION_SECTIONS } from "../lib/openapi/descriptions";
 import { OpenAPIDocument } from "../lib/openapi/merge";
@@ -150,5 +150,72 @@ describe("OpenAPI docs routes", () => {
     const html = await response.text();
     expect(html.length).toBeGreaterThan(0);
     expect(html.toLowerCase()).toContain("scalar");
+  });
+
+  it("동일 origin 요청에서는 OpenAPI 문서 캐시를 재사용해 재생성을 피한다", async () => {
+    const getAuthOpenApiSchema = vi.fn(async () => authOpenApiFixture);
+    const app = createDocsApp({
+      requireDocsAuth: false,
+      getAuthOpenApiSchema,
+    });
+    const origin = `https://docs-cache-${Date.now()}.example.com`;
+
+    const first = await app.request(new Request(`${origin}/api/openapi.json`));
+    expect(first.status).toBe(200);
+
+    const second = await app.request(new Request(`${origin}/api/openapi.json`));
+    expect(second.status).toBe(200);
+    expect(second.headers.get("cache-control")).toBe(
+      "public, max-age=30, s-maxage=120, stale-while-revalidate=300",
+    );
+    expect(getAuthOpenApiSchema).toHaveBeenCalledTimes(1);
+  });
+
+  it("stale 구간에서는 캐시를 즉시 반환하고 백그라운드 갱신을 수행한다", async () => {
+    const baseNow = Date.now();
+    const nowSpy = vi.spyOn(Date, "now");
+    let authSchemaRevision = 0;
+    const getAuthOpenApiSchema = vi.fn(async () => {
+      authSchemaRevision += 1;
+      return {
+        openapi: "3.1.1",
+        info: {
+          title: "Better Auth",
+          version: String(authSchemaRevision),
+        },
+        paths: {
+          [`/session-rev-${authSchemaRevision}`]: {
+            get: {
+              operationId: `getSessionRev${authSchemaRevision}`,
+              responses: {
+                200: {
+                  description: "ok",
+                },
+              },
+            },
+          },
+        },
+      } satisfies OpenAPIDocument;
+    });
+    const app = createDocsApp({
+      requireDocsAuth: false,
+      getAuthOpenApiSchema,
+    });
+    const origin = `https://docs-stale-${Date.now()}.example.com`;
+
+    nowSpy.mockReturnValue(baseNow);
+    const first = await app.request(new Request(`${origin}/api/openapi.json`));
+    expect(first.status).toBe(200);
+    const firstBody = await first.text();
+
+    nowSpy.mockReturnValue(baseNow + 130_000);
+    const second = await app.request(new Request(`${origin}/api/openapi.json`));
+    expect(second.status).toBe(200);
+    const secondBody = await second.text();
+
+    expect(secondBody).toBe(firstBody);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(getAuthOpenApiSchema).toHaveBeenCalledTimes(2);
   });
 });

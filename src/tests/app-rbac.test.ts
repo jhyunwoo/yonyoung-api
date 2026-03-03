@@ -107,6 +107,10 @@ const createDataServiceMock = (overrides: Partial<DataService> = {}): DataServic
     listAuditLogs: async () => [],
     getLatestAuditActor: async () => null,
     listLatestAuditActors: async () => ({}),
+    listUsers: async () => [],
+    listUsersByIds: async () => [],
+    listUsersByGenerationIds: async () => [],
+    countUsersByRole: async () => 0,
   };
   const merged = { ...base, ...overrides } as DataService;
 
@@ -379,15 +383,14 @@ describe("RBAC routes", /** describe 실행 과정에서 필요한 연산을 수
   });
 
   it("운영진은 본인 소속 기수 사용자 목록만 조회할 수 있다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const listUsers = vi.fn(async () => [
+    const listUsersByGenerationIds = vi.fn(async () => [
       createUser(IDs.member, "regular_member", IDs.generation),
-      createUser(IDs.otherUser, "regular_member", IDs.otherGeneration),
       createUser(IDs.manager, "manager", IDs.generation),
     ]);
     const app = createTestApp({
       actor: createActor("manager", IDs.manager, IDs.generation),
       dataService: createDataServiceMock({
-        listUsers,
+        listUsersByGenerationIds,
       }),
     });
 
@@ -397,7 +400,8 @@ describe("RBAC routes", /** describe 실행 과정에서 필요한 연산을 수
     const body = (await response.json()) as { data: UserEntity[] };
     expect(body.data).toHaveLength(2);
     expect(body.data.map((user) => user.id)).toEqual([IDs.member, IDs.manager]);
-    expect(listUsers).toHaveBeenCalledTimes(1);
+    expect(listUsersByGenerationIds).toHaveBeenCalledTimes(1);
+    expect(listUsersByGenerationIds).toHaveBeenCalledWith([IDs.generation]);
   });
 
   it("부원은 다른 사용자 상세 조회가 불가하다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {

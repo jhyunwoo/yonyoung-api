@@ -156,7 +156,7 @@ describe("public cache helpers", () => {
       headers: {
         "content-type": "application/json",
         "cache-control": PUBLIC_CACHE_CONTROL,
-        "x-public-cache-cached-at": `${now - 70_000}`,
+        "x-public-cache-cached-at": `${now - 130_000}`,
       },
     });
 
