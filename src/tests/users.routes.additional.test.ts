@@ -11,6 +11,29 @@ import {
 } from "./test-helpers";
 
 describe("user routes additional coverage", /** describe 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => {
+  it("legacy /users 경로는 /api/users로 308 리다이렉트한다", async () => {
+    const app = createTestApp({ actor: createActor("vice_president", IDs.vicePresident) });
+
+    const response = await app.request("/users?scope=all", { redirect: "manual" });
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe("/api/users?scope=all");
+  });
+
+  it("legacy /users/:id 경로는 메서드를 유지한 채 /api/users/:id로 308 리다이렉트한다", async () => {
+    const app = createTestApp({ actor: createActor("vice_president", IDs.vicePresident) });
+
+    const response = await app.request(`/users/${IDs.member}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "updated" }),
+      redirect: "manual",
+    });
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(`/api/users/${IDs.member}`);
+  });
+
   it("admin 권한 사용자는 users 목록 전체 조회가 가능하다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
     const listUsers = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => [
       createUser({ id: IDs.member, role: "regular_member" }),
@@ -29,6 +52,31 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     expect(body.data).toHaveLength(2);
     expect(listUsers).toHaveBeenCalledTimes(1);
     expect(getUserById).not.toHaveBeenCalled();
+  });
+
+  it("인증 사용자는 /api/users/me에서 본인 프로필을 조회할 수 있다", async () => {
+    const actorId = "user|member-0001";
+    const me = createUser({ id: actorId, role: "regular_member" });
+    const getUserById = fn(async () => me);
+    const app = createTestApp({
+      actor: createActor("regular_member", actorId),
+      dataService: createDataServiceMock({ getUserById }),
+    });
+
+    const response = await app.request("/api/users/me");
+    expect(response.status).toBe(200);
+
+    const body = await readJson<{ data: { id: string } }>(response);
+    expect(body.data.id).toBe(actorId);
+    expect(getUserById).toHaveBeenCalledWith(actorId);
+  });
+
+  it("인증되지 않은 요청은 /api/users/me에서 401을 반환한다", async () => {
+    const app = createTestApp({ actor: null });
+
+    const response = await app.request("/api/users/me");
+    expect(response.status).toBe(401);
+    await expectErrorCode(response, "UNAUTHORIZED");
   });
 
   it("member 계열 사용자의 본인 조회(list users fallback)에서 본인이 없으면 404", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
@@ -475,18 +523,22 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
   });
 
   it("bulk-role 권한 일괄 변경은 vice_president에게 허용된다", async () => {
-    const listUsers = fn(async () => [
+    const listUsersByIds = fn(async () => [
       createUser({ id: IDs.member, role: "regular_member" }),
       createUser({ id: IDs.otherUser, role: "associate_member" }),
-      createUser({ id: IDs.president, role: "president" }),
     ]);
+    const countUsersByRole = fn(async () => 1);
     const bulkUpdateUsersRole = fn(async () => [
       createUser({ id: IDs.member, role: "manager" }),
       createUser({ id: IDs.otherUser, role: "manager" }),
     ]);
     const app = createTestApp({
       actor: createActor("vice_president", IDs.vicePresident),
-      dataService: createDataServiceMock({ listUsers, bulkUpdateUsersRole }),
+      dataService: createDataServiceMock({
+        listUsersByIds,
+        countUsersByRole,
+        bulkUpdateUsersRole,
+      }),
     });
 
     const response = await app.request("/api/users/bulk-role", {
@@ -504,6 +556,8 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
       userIds: [IDs.member, IDs.otherUser],
       role: "manager",
     });
+    expect(listUsersByIds).toHaveBeenCalledWith([IDs.member, IDs.otherUser]);
+    expect(countUsersByRole).toHaveBeenCalledWith("president");
   });
 
   it("bulk-role 요청에서 manager는 403을 반환한다", async () => {
@@ -532,14 +586,14 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
 
   it("bulk-role 요청에서 회장은 다른 회장 권한을 변경할 수 없어 403을 반환한다", async () => {
     const bulkUpdateUsersRole = fn(async () => []);
+    const listUsersByIds = fn(async () => [
+      createUser({ id: IDs.otherUser, role: "president" }),
+    ]);
     const app = createTestApp({
       actor: createActor("president", IDs.president),
       dataService: createDataServiceMock({
-        listUsers: fn(async () => [
-          createUser({ id: IDs.president, role: "president" }),
-          createUser({ id: IDs.otherUser, role: "president" }),
-          createUser({ id: IDs.member, role: "regular_member" }),
-        ]),
+        listUsersByIds,
+        countUsersByRole: fn(async () => 2),
         bulkUpdateUsersRole,
       }),
     });
@@ -556,14 +610,19 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     expect(response.status).toBe(403);
     await expectErrorCode(response, "FORBIDDEN");
     expect(bulkUpdateUsersRole).not.toHaveBeenCalled();
+    expect(listUsersByIds).toHaveBeenCalledWith([IDs.otherUser]);
   });
 
   it("bulk-role 요청에서 대상 사용자 일부가 없으면 400을 반환한다", async () => {
     const bulkUpdateUsersRole = fn(async () => []);
+    const listUsersByIds = fn(async () => [
+      createUser({ id: IDs.member, role: "regular_member" }),
+    ]);
     const app = createTestApp({
       actor: createActor("vice_president", IDs.vicePresident),
       dataService: createDataServiceMock({
-        listUsers: fn(async () => [createUser({ id: IDs.member, role: "regular_member" })]),
+        listUsersByIds,
+        countUsersByRole: fn(async () => 1),
         bulkUpdateUsersRole,
       }),
     });
@@ -580,17 +639,19 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     expect(response.status).toBe(400);
     await expectErrorCode(response, "BAD_REQUEST");
     expect(bulkUpdateUsersRole).not.toHaveBeenCalled();
+    expect(listUsersByIds).toHaveBeenCalledWith([IDs.member, IDs.otherUser]);
   });
 
   it("bulk-role 요청에서 회장 1인을 하향하면 400을 반환한다", async () => {
     const bulkUpdateUsersRole = fn(async () => []);
+    const listUsersByIds = fn(async () => [
+      createUser({ id: IDs.president, role: "president" }),
+    ]);
     const app = createTestApp({
       actor: createActor("president", IDs.president),
       dataService: createDataServiceMock({
-        listUsers: fn(async () => [
-          createUser({ id: IDs.president, role: "president" }),
-          createUser({ id: IDs.member, role: "regular_member" }),
-        ]),
+        listUsersByIds,
+        countUsersByRole: fn(async () => 1),
         bulkUpdateUsersRole,
       }),
     });
@@ -607,6 +668,7 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     expect(response.status).toBe(400);
     await expectErrorCode(response, "BAD_REQUEST");
     expect(bulkUpdateUsersRole).not.toHaveBeenCalled();
+    expect(listUsersByIds).toHaveBeenCalledWith([IDs.president]);
   });
 
   it("resource-history 조회는 부회장에게 허용되며 기본 limit=100을 사용한다", async () => {

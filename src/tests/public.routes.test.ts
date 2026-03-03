@@ -36,7 +36,7 @@ describe("public routes", () => {
 
     const response = await app.request("/api/public/activities");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("s-maxage=60");
+    expect(response.headers.get("cache-control")).toContain("s-maxage=120");
 
     const body = await readJson<{ data: Array<{ id: string }> }>(response);
     expect(body.data.map((item) => item.id)).toEqual([
@@ -57,7 +57,7 @@ describe("public routes", () => {
 
     const response = await app.request(`/api/public/activities/${IDs.activity}`);
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("s-maxage=60");
+    expect(response.headers.get("cache-control")).toContain("s-maxage=120");
 
     const body = await readJson<{ data: { id: string; title: string } }>(response);
     expect(body.data.id).toBe(IDs.activity);
@@ -94,7 +94,7 @@ describe("public routes", () => {
 
     const response = await app.request("/api/public/exhibitions");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("s-maxage=60");
+    expect(response.headers.get("cache-control")).toContain("s-maxage=120");
 
     const body = await readJson<{ data: Array<{ id: string }> }>(response);
     expect(body.data.map((item) => item.id)).toEqual([
@@ -138,7 +138,7 @@ describe("public routes", () => {
 
     const response = await app.request(`/api/public/exhibitions/${IDs.exhibition}`);
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("s-maxage=60");
+    expect(response.headers.get("cache-control")).toContain("s-maxage=120");
 
     const body = await readJson<{ data: { id: string; title: string } }>(response);
     expect(body.data.id).toBe(IDs.exhibition);
@@ -200,7 +200,7 @@ describe("public routes", () => {
 
     const response = await app.request("/api/public/linktree");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("s-maxage=60");
+    expect(response.headers.get("cache-control")).toContain("s-maxage=120");
 
     const body = await readJson<{ data: Array<{ id: string }> }>(response);
     expect(body.data).toHaveLength(1);
@@ -220,7 +220,7 @@ describe("public routes", () => {
 
     const response = await app.request("/api/public/site-settings");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("s-maxage=60");
+    expect(response.headers.get("cache-control")).toContain("s-maxage=120");
 
     const body = await readJson<{ data: { footerInstagramId: string } }>(response);
     expect(body.data.footerInstagramId).toBe("yonyoung_archive");
@@ -241,7 +241,7 @@ describe("public routes", () => {
 
     const response = await app.request("/api/public/recruiting-plan/current");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("s-maxage=60");
+    expect(response.headers.get("cache-control")).toContain("s-maxage=120");
 
     const body = await readJson<{ data: { year: number; title: string } }>(response);
     expect(body.data.year).toBe(2031);
@@ -258,7 +258,7 @@ describe("public routes", () => {
 
     const response = await app.request("/api/public/recruiting-plan/current");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("s-maxage=60");
+    expect(response.headers.get("cache-control")).toContain("s-maxage=120");
 
     const body = await readJson<{ data: null }>(response);
     expect(body.data).toBeNull();
@@ -283,7 +283,7 @@ describe("public routes", () => {
 
     const response = await app.request("/api/public/generations");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("s-maxage=60");
+    expect(response.headers.get("cache-control")).toContain("s-maxage=120");
 
     const body = await readJson<{ data: Array<{ id: string }> }>(response);
     expect(body.data.map((item) => item.id)).toEqual([
@@ -348,7 +348,7 @@ describe("public routes", () => {
 
     const response = await app.request("/api/public/photographers");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("s-maxage=60");
+    expect(response.headers.get("cache-control")).toContain("s-maxage=120");
 
     const body = await readJson<{
       data: Array<{

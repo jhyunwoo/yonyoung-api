@@ -13,7 +13,7 @@ import {
 
 describe("generation members routes", () => {
   it("회장은 임의 기수 멤버 목록을 조회할 수 있다", async () => {
-    const listUsers = fn(async () => [
+    const listUsersByGenerationIds = fn(async () => [
       createUser({
         id: IDs.member,
         familyName: "김",
@@ -23,22 +23,13 @@ describe("generation members routes", () => {
         generationId: IDs.generation,
         generationIds: [IDs.generation],
       }),
-      createUser({
-        id: IDs.otherUser,
-        familyName: "박",
-        givenName: "다른",
-        department: "경영학과",
-        role: "associate_member",
-        generationId: IDs.generationAlt,
-        generationIds: [IDs.generationAlt],
-      }),
     ]);
 
     const app = createTestApp({
       actor: createActor("president", IDs.president),
       dataService: createDataServiceMock({
         getGenerationById: fn(async () => createGeneration({ id: IDs.generation })),
-        listUsers,
+        listUsersByGenerationIds,
       }),
     });
 
@@ -93,7 +84,7 @@ describe("generation members routes", () => {
       actor: createActor("vice_president", IDs.vicePresident),
       dataService: createDataServiceMock({
         getGenerationById: fn(async () => createGeneration({ id: IDs.generationAlt })),
-        listUsers: fn(async () => [
+        listUsersByGenerationIds: fn(async () => [
           createUser({
             id: IDs.otherUser,
             generationId: IDs.generationAlt,
@@ -126,7 +117,7 @@ describe("generation members routes", () => {
       },
       dataService: createDataServiceMock({
         getGenerationById: fn(async () => createGeneration({ id: IDs.generation })),
-        listUsers: fn(async () => [
+        listUsersByGenerationIds: fn(async () => [
           createUser({
             id: IDs.member,
             generationId: IDs.generation,
@@ -145,7 +136,7 @@ describe("generation members routes", () => {
   });
 
   it("부장은 본인 소속이 아닌 기수 멤버 목록 조회 시 403을 반환한다", async () => {
-    const listUsers = fn(async () => []);
+    const listUsersByGenerationIds = fn(async () => []);
 
     const app = createTestApp({
       actor: {
@@ -155,14 +146,14 @@ describe("generation members routes", () => {
       },
       dataService: createDataServiceMock({
         getGenerationById: fn(async () => createGeneration({ id: IDs.generationAlt })),
-        listUsers,
+        listUsersByGenerationIds,
       }),
     });
 
     const response = await app.request(`/api/generations/${IDs.generationAlt}/members`);
     expect(response.status).toBe(403);
     await expectErrorCode(response, "FORBIDDEN");
-    expect(listUsers).not.toHaveBeenCalled();
+    expect(listUsersByGenerationIds).not.toHaveBeenCalled();
   });
 
   it("일반 멤버는 본인 소속 기수 멤버 목록을 조회할 수 있다", async () => {
@@ -174,7 +165,7 @@ describe("generation members routes", () => {
       },
       dataService: createDataServiceMock({
         getGenerationById: fn(async () => createGeneration({ id: IDs.generation })),
-        listUsers: fn(async () => [
+        listUsersByGenerationIds: fn(async () => [
           createUser({
             id: IDs.member,
             generationId: IDs.generation,

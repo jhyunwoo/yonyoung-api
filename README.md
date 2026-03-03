@@ -65,6 +65,9 @@ pnpm install
 pnpm dev
 ```
 
+`pnpm dev`는 실행 전에 `wrangler d1 migrations apply yonyoung-db --local`을 자동 수행합니다.
+기존에 실행 중이던 `wrangler dev`가 있으면 먼저 종료한 뒤 다시 실행하세요.
+
 ## Quality Gates
 
 ```bash

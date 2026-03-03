@@ -547,6 +547,9 @@ export type DataService = {
   }) => Promise<RecruitingPlanEntity>;
 
   listUsers: () => Promise<UserEntity[]>;
+  listUsersByIds: (userIds: string[]) => Promise<UserEntity[]>;
+  listUsersByGenerationIds: (generationIds: string[]) => Promise<UserEntity[]>;
+  countUsersByRole: (role: string) => Promise<number>;
   getUserById: (id: string) => Promise<UserEntity | null>;
   listUserResourceHistory: (input: {
     userId: string;

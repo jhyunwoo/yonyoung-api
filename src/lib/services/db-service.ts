@@ -170,37 +170,85 @@ const listLatestAuditActorsByResourceId = async (
 	resourceType: AuditResourceType,
 	resourceIds: string[],
 ): Promise<Record<string, AuditActorEntity | null>> => {
-	if (resourceIds.length === 0) {
+	const normalizedResourceIds = Array.from(
+		new Set(resourceIds.map((resourceId) => resourceId.trim()).filter(Boolean)),
+	);
+	if (normalizedResourceIds.length === 0) {
 		return {};
 	}
 
-	const rows = await db
+	const result: Record<string, AuditActorEntity | null> = {};
+	for (const resourceId of normalizedResourceIds) {
+		result[resourceId] = null;
+	}
+
+	const latestCreatedAtRows = await db
 		.select({
 			resourceId: auditLogs.resourceId,
-			actorId: auditLogs.actorId,
-			actorName: auditLogs.actorName,
-			actorRole: auditLogs.actorRole,
+			latestCreatedAt: sql<number>`max(${auditLogs.createdAt})`,
 		})
 		.from(auditLogs)
 		.where(
 			and(
 				eq(auditLogs.resourceType, resourceType),
-				inArray(auditLogs.resourceId, resourceIds),
+				inArray(auditLogs.resourceId, normalizedResourceIds),
 			),
 		)
-		.orderBy(desc(auditLogs.createdAt));
+		.groupBy(auditLogs.resourceId);
 
-	const result: Record<string, AuditActorEntity | null> = {};
-	for (const resourceId of resourceIds) {
-		result[resourceId] = null;
+	if (latestCreatedAtRows.length === 0) {
+		return result;
 	}
 
-	for (const row of rows) {
-		if (result[row.resourceId] !== null) {
+	const latestCreatedAtByResourceId = new Map<string, number>();
+	for (const row of latestCreatedAtRows) {
+		latestCreatedAtByResourceId.set(
+			row.resourceId,
+			toTimestampDate(row.latestCreatedAt).getTime(),
+		);
+	}
+
+	const latestCreatedAtValues = Array.from(
+		new Set(Array.from(latestCreatedAtByResourceId.values())),
+	).map((value) => new Date(value));
+
+	const latestRows = await db
+		.select({
+			id: auditLogs.id,
+			resourceId: auditLogs.resourceId,
+			actorId: auditLogs.actorId,
+			actorName: auditLogs.actorName,
+			actorRole: auditLogs.actorRole,
+			createdAt: auditLogs.createdAt,
+		})
+		.from(auditLogs)
+		.where(
+			and(
+				eq(auditLogs.resourceType, resourceType),
+				inArray(auditLogs.resourceId, normalizedResourceIds),
+				inArray(auditLogs.createdAt, latestCreatedAtValues),
+			),
+		)
+		.orderBy(desc(auditLogs.createdAt), desc(auditLogs.id));
+
+	const resolvedResourceIds = new Set<string>();
+	for (const row of latestRows) {
+		const expectedCreatedAt = latestCreatedAtByResourceId.get(row.resourceId);
+		if (expectedCreatedAt === undefined) {
 			continue;
 		}
-		if (Object.prototype.hasOwnProperty.call(result, row.resourceId)) {
-			result[row.resourceId] = toAuditActor(row);
+		if (resolvedResourceIds.has(row.resourceId)) {
+			continue;
+		}
+		if (row.createdAt.getTime() !== expectedCreatedAt) {
+			continue;
+		}
+
+		result[row.resourceId] = toAuditActor(row);
+		resolvedResourceIds.add(row.resourceId);
+
+		if (resolvedResourceIds.size === normalizedResourceIds.length) {
+			break;
 		}
 	}
 
@@ -3275,6 +3323,95 @@ export const createDbDataService = (database: D1Database): DataService => {
 				.where(isNull(user.deletedAt))
 				.orderBy(desc(user.createdAt));
 			return mapUsersWithGenerations(db, rows);
+		},
+		async listUsersByIds(userIds) {
+			const normalizedUserIds = Array.from(
+				new Set(userIds.map((userId) => userId.trim()).filter(Boolean)),
+			);
+			if (normalizedUserIds.length === 0) {
+				return [];
+			}
+
+			const rows = await db
+				.select()
+				.from(user)
+				.where(
+					and(inArray(user.id, normalizedUserIds), isNull(user.deletedAt)),
+				)
+				.orderBy(desc(user.createdAt));
+			return mapUsersWithGenerations(db, rows);
+		},
+		async listUsersByGenerationIds(generationIds) {
+			const normalizedGenerationIds = Array.from(
+				new Set(
+					generationIds
+						.map((generationId) => generationId.trim())
+						.filter(Boolean),
+				),
+			);
+			if (normalizedGenerationIds.length === 0) {
+				return [];
+			}
+
+			const readLegacyUserIds = async (): Promise<string[]> => {
+				const legacyRows = await db
+					.select({
+						id: user.id,
+					})
+					.from(user)
+					.where(
+						and(
+							inArray(user.generationId, normalizedGenerationIds),
+							isNull(user.deletedAt),
+						),
+					)
+					.orderBy(desc(user.createdAt));
+				return legacyRows.map((row) => row.id);
+			};
+
+			try {
+				const [linkedRows, legacyUserIds] = await Promise.all([
+					db
+						.select({
+							id: user.id,
+						})
+						.from(user)
+						.innerJoin(userGenerations, eq(user.id, userGenerations.userId))
+						.innerJoin(
+							generations,
+							eq(userGenerations.generationId, generations.id),
+						)
+						.where(
+							and(
+								inArray(userGenerations.generationId, normalizedGenerationIds),
+								isNull(user.deletedAt),
+								isNull(generations.deletedAt),
+							),
+						)
+						.orderBy(desc(user.createdAt)),
+					readLegacyUserIds(),
+				]);
+
+				const targetUserIds = Array.from(
+					new Set([...linkedRows.map((row) => row.id), ...legacyUserIds]),
+				);
+				return this.listUsersByIds(targetUserIds);
+			} catch (error) {
+				if (!isMissingUserGenerationsTableError(error)) {
+					throw error;
+				}
+
+				return this.listUsersByIds(await readLegacyUserIds());
+			}
+		},
+		async countUsersByRole(role) {
+			const rows = await db
+				.select({
+					value: sql<number>`count(*)`,
+				})
+				.from(user)
+				.where(and(isNull(user.deletedAt), eq(user.role, role)));
+			return rows[0]?.value ?? 0;
 		},
 		/**
 		 * getUserById 값을 조회하거나 입력을 가공해 필요한 결과를 생성합니다.

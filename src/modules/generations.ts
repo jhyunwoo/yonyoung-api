@@ -329,8 +329,7 @@ export const registerGenerationRoutes = (
       }
     }
 
-    const members = (await dataService.listUsers())
-      .filter((candidate) => readGenerationIdSet(candidate).has(generation.id))
+    const members = (await dataService.listUsersByGenerationIds([generation.id]))
       .map((candidate) => ({
         id: candidate.id,
         generationId: generation.id,

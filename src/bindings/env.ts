@@ -24,6 +24,8 @@ const runtimeEnvSchema = z
     D1_WRITE_RETRY_MAX_RETRIES: z.string().optional(),
     D1_WRITE_RETRY_BASE_DELAY_MS: z.string().optional(),
     D1_WRITE_RETRY_MAX_DELAY_MS: z.string().optional(),
+    PERF_ANALYTICS_ENABLED: stringBooleanSchema,
+    PERF_ANALYTICS_SAMPLE_RATE: z.string().optional(),
     CSP_REPORT_ONLY: stringBooleanSchema,
     VAPID_PUBLIC_KEY: z.string().optional(),
     VAPID_PRIVATE_KEY: z.string().optional(),

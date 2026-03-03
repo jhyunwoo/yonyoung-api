@@ -17,13 +17,16 @@ export const requireActor = async (
   dependencies: AppDependencies,
 ): Promise<{ actor: Actor } | { response: Response }> => {
   const existingActor = c.get("actor");
+  const actorResolved = c.get("actorResolved");
   let actor = existingActor;
-  if (!actor) {
+
+  if (!actor && !actorResolved) {
     try {
       actor = await dependencies.resolveActor(c);
     } catch {
       actor = null;
     }
+    c.set("actorResolved", true);
   }
 
   if (!actor) {

@@ -2,9 +2,9 @@ import { Context } from "hono";
 import HonoAppType from "../../types/honoAppType";
 import { runInBackground } from "./background-task";
 
-const PUBLIC_CACHE_TTL_SECONDS = 60;
-const PUBLIC_CACHE_STALE_REVALIDATE_SECONDS = 120;
-const PUBLIC_CACHE_MAX_AGE_SECONDS = 60;
+const PUBLIC_CACHE_TTL_SECONDS = 120;
+const PUBLIC_CACHE_STALE_REVALIDATE_SECONDS = 300;
+const PUBLIC_CACHE_MAX_AGE_SECONDS = 30;
 const CACHE_STATUS_HEADER = "X-Public-Cache-Status";
 const CACHED_AT_HEADER = "X-Public-Cache-Cached-At";
 const CACHEABLE_RESPONSE_FORBIDDEN_HEADERS = ["set-cookie"] as const;
