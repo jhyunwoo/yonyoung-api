@@ -21,6 +21,7 @@ import { loggerMiddleware } from "./middleware/logger";
 import { maxBodySizeMiddleware } from "./middleware/body-size";
 import { requestIdMiddleware } from "./middleware/requestId";
 import { apiSecurityHeadersMiddleware } from "./middleware/securityHeaders";
+import { legacyApiRedirectMiddleware } from "./middleware/legacyApiRedirect";
 
 const API_NAME = "yonyoung-api" as const;
 const API_VERSION =
@@ -140,6 +141,9 @@ export const createApp = (partialDependencies?: Partial<AppDependencies>) => {
     );
     c.res.headers.set("X-Response-Time", `${durationMs.toFixed(2)}ms`);
   });
+
+  app.use("/users", legacyApiRedirectMiddleware);
+  app.use("/users/*", legacyApiRedirectMiddleware);
 
   app.use("/api/*", maxBodySizeMiddleware);
 

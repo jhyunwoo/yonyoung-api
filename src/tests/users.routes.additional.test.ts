@@ -11,6 +11,29 @@ import {
 } from "./test-helpers";
 
 describe("user routes additional coverage", /** describe 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => {
+  it("legacy /users 경로는 /api/users로 308 리다이렉트한다", async () => {
+    const app = createTestApp({ actor: createActor("vice_president", IDs.vicePresident) });
+
+    const response = await app.request("/users?scope=all", { redirect: "manual" });
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe("/api/users?scope=all");
+  });
+
+  it("legacy /users/:id 경로는 메서드를 유지한 채 /api/users/:id로 308 리다이렉트한다", async () => {
+    const app = createTestApp({ actor: createActor("vice_president", IDs.vicePresident) });
+
+    const response = await app.request(`/users/${IDs.member}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "updated" }),
+      redirect: "manual",
+    });
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(`/api/users/${IDs.member}`);
+  });
+
   it("admin 권한 사용자는 users 목록 전체 조회가 가능하다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
     const listUsers = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => [
       createUser({ id: IDs.member, role: "regular_member" }),
