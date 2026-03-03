@@ -13,7 +13,11 @@ type App = OpenAPIHono<HonoAppType>;
  */
 export function registerAuthRoutes(app: App) {
   app.on(["GET", "POST"], "/api/auth/*", async (c): Promise<any> => {
-    const auth = createAuth(resolveD1Database(c.env), c.env);
+    const requestOrigin = new URL(c.req.url).origin;
+    const auth = createAuth(resolveD1Database(c.env), {
+      ...c.env,
+      BETTER_AUTH_URL: requestOrigin,
+    });
     return auth.handler(c.req.raw);
   });
 }
