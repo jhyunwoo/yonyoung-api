@@ -11,6 +11,7 @@
 		"db:generate": "drizzle-kit generate",
 		"db:migrate:local": "wrangler d1 migrations apply yonyoung-db --local",
 		"db:migrate:remote": "wrangler d1 migrations apply yonyoung-db --remote",
+		"db:studio": "drizzle-kit studio",
 		"check-types": "pnpm run typecheck",
 		"test:node": "vitest run",
 		"test:workers": "vitest run -c vitest.workers.config.ts",
