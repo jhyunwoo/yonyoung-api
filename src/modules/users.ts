@@ -60,6 +60,19 @@ const listUsersRoute = createRoute({
   },
 });
 
+const getCurrentUserRoute = createRoute({
+  method: "get",
+  path: "/api/users/me",
+  tags: ["Users"],
+  operationId: "getCurrentUser",
+  security: [{ cookieAuth: [] }],
+  responses: {
+    200: dataResponse(ApiUserSchema, "현재 로그인 사용자 조회 성공"),
+    401: errorResponses[401],
+    404: errorResponses[404],
+  },
+});
+
 const getUserByIdRoute = createRoute({
   method: "get",
   path: "/api/users/{id}",
@@ -196,6 +209,22 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
     }
 
     return forbidden(c);
+  });
+
+  app.openapi(getCurrentUserRoute, async (c): Promise<any> => {
+    const actorResult = await requireActor(c, dependencies);
+    if ("response" in actorResult) {
+      return actorResult.response;
+    }
+
+    const data = await dependencies
+      .getDataService(c)
+      .getUserById(actorResult.actor.id);
+    if (!data) {
+      return notFound(c);
+    }
+
+    return ok(c, data);
   });
 
   app.openapi(getUserByIdRoute, /** app.openapi 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param c 요청/실행 컨텍스트 객체입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 권한/인증 분기에서 잘못된 흐름이 발생하지 않도록 호출 순서를 유지해야 합니다. */ async (c): Promise<any> => {

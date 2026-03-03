@@ -54,6 +54,31 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     expect(getUserById).not.toHaveBeenCalled();
   });
 
+  it("인증 사용자는 /api/users/me에서 본인 프로필을 조회할 수 있다", async () => {
+    const actorId = "user|member-0001";
+    const me = createUser({ id: actorId, role: "regular_member" });
+    const getUserById = fn(async () => me);
+    const app = createTestApp({
+      actor: createActor("regular_member", actorId),
+      dataService: createDataServiceMock({ getUserById }),
+    });
+
+    const response = await app.request("/api/users/me");
+    expect(response.status).toBe(200);
+
+    const body = await readJson<{ data: { id: string } }>(response);
+    expect(body.data.id).toBe(actorId);
+    expect(getUserById).toHaveBeenCalledWith(actorId);
+  });
+
+  it("인증되지 않은 요청은 /api/users/me에서 401을 반환한다", async () => {
+    const app = createTestApp({ actor: null });
+
+    const response = await app.request("/api/users/me");
+    expect(response.status).toBe(401);
+    await expectErrorCode(response, "UNAUTHORIZED");
+  });
+
   it("member 계열 사용자의 본인 조회(list users fallback)에서 본인이 없으면 404", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
     const getUserById = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => null);
     const app = createTestApp({
