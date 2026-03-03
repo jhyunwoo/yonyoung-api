@@ -44,7 +44,7 @@
 	],
 	"vars": {
 		"BETTER_AUTH_URL": "https://api.yonyoung.moveto.kr",
-		"BETTER_AUTH_TRUSTED_ORIGINS": "https://yonyoung.moveto.kr,https://dev.yonyoung.moveto.kr",
+		"BETTER_AUTH_TRUSTED_ORIGINS": "https://yonyoung.moveto.kr,https://dev.yonyoung.moveto.kr,https://yonyoung.yonsei.ac.kr",
 		"R2_PUBLIC_BASE_URL": "https://storage.yonyoung.moveto.kr",
 		"VAPID_PUBLIC_KEY": "E0QyEop1GC5FZG7Waq6W3lh23kKZatbFPDNYaTahJjo",
 		"VAPID_SUBJECT": "mailto:support@moveto.kr",
@@ -61,7 +61,7 @@
 		"dev": {
 			"vars": {
 				"BETTER_AUTH_URL": "https://api.yonyoung.moveto.kr",
-				"BETTER_AUTH_TRUSTED_ORIGINS": "https://yonyoung.moveto.kr,https://dev.yonyoung.moveto.kr",
+				"BETTER_AUTH_TRUSTED_ORIGINS": "https://yonyoung.moveto.kr,https://dev.yonyoung.moveto.kr,https://yonyoung.yonsei.ac.kr",
 				"R2_PUBLIC_BASE_URL": "https://storage.yonyoung.moveto.kr",
 				"VAPID_PUBLIC_KEY": "E0QyEop1GC5FZG7Waq6W3lh23kKZatbFPDNYaTahJjo",
 				"VAPID_SUBJECT": "mailto:support@moveto.kr",
