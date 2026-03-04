@@ -20,6 +20,8 @@ describe("audit routes", () => {
         actor: {
           id: IDs.manager,
           name: "manager-name",
+          familyName: null,
+          givenName: null,
           role: "manager",
         },
         changedFields: ["title"],
@@ -37,9 +39,16 @@ describe("audit routes", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = await readJson<{ data: Array<{ id: string }> }>(response);
+    const body = await readJson<{
+      data: Array<{
+        id: string;
+        actor: { familyName: string | null; givenName: string | null } | null;
+      }>;
+    }>(response);
     expect(body.data).toHaveLength(1);
     expect(body.data[0]?.id).toBe("a0000000-0000-4000-8000-000000000001");
+    expect(body.data[0]?.actor?.familyName).toBeNull();
+    expect(body.data[0]?.actor?.givenName).toBeNull();
     expect(listAuditLogs).toHaveBeenCalledWith("activity", IDs.activity, 5);
   });
 

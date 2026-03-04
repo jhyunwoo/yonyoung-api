@@ -33,6 +33,8 @@ const createActor = (
   role,
   rawRole: role,
   name: `${role}-name`,
+  familyName: null,
+  givenName: null,
   email: `${role}@example.com`,
   generationId,
 });
@@ -87,6 +89,8 @@ const createMarketItemEntity = (overrides: Partial<{
   seller: {
     id: overrides.sellerId ?? IDs.member,
     name: "seller-name",
+    familyName: null,
+    givenName: null,
     image: null,
     role: "regular_member",
   },

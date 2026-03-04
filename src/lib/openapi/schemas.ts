@@ -224,6 +224,14 @@ const ApiAuditActorSchema = z
       description: "수정자 이름",
       example: "홍길동",
     }),
+    familyName: z.string().nullable().openapi({
+      description: "수정자 성",
+      example: "홍",
+    }),
+    givenName: z.string().nullable().openapi({
+      description: "수정자 이름(given name)",
+      example: "길동",
+    }),
     role: z.string().nullable().openapi({
       description: "수정자 역할 문자열",
       example: "manager",
@@ -741,6 +749,14 @@ const ApiNoticeAuthorSchema = z
       description: "작성자 이름",
       example: "홍길동",
     }),
+    familyName: z.string().nullable().openapi({
+      description: "작성자 성",
+      example: "홍",
+    }),
+    givenName: z.string().nullable().openapi({
+      description: "작성자 이름(given name)",
+      example: "길동",
+    }),
     image: z.string().url().nullable().openapi({
       description: "작성자 프로필 이미지 URL (없으면 null)",
       example: "https://cdn.yonyoung.example/users/profile/member.png",
@@ -934,6 +950,14 @@ const ApiMarketSellerSchema = z
     name: z.string().openapi({
       description: "판매자 이름",
       example: "홍길동",
+    }),
+    familyName: z.string().nullable().openapi({
+      description: "판매자 성",
+      example: "홍",
+    }),
+    givenName: z.string().nullable().openapi({
+      description: "판매자 이름(given name)",
+      example: "길동",
     }),
     image: z.string().url().nullable().openapi({
       description: "판매자 프로필 이미지 URL",

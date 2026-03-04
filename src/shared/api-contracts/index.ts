@@ -43,6 +43,8 @@ export type ApiAuditAction = "create" | "update" | "delete";
 export type ApiAuditActor = {
   id: string;
   name: string;
+  familyName: string | null;
+  givenName: string | null;
   role: ApiRole | null;
 };
 
@@ -183,6 +185,8 @@ export type ApiUpdateExhibitionImageBatchItemInput = {
 export type ApiNoticeAuthor = {
   id: string;
   name: string;
+  familyName: string | null;
+  givenName: string | null;
   image: string | null;
   role: ApiRole | null;
 };
@@ -232,6 +236,8 @@ export type ApiMarketConditionGrade = "A" | "B" | "C" | "D";
 export type ApiMarketSeller = {
   id: string;
   name: string;
+  familyName: string | null;
+  givenName: string | null;
   image: string | null;
   role: ApiRole | null;
 };

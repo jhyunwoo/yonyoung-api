@@ -26,6 +26,8 @@ export type AuditAction = "create" | "update" | "delete";
 export type AuditActorEntity = {
   id: string;
   name: string;
+  familyName: string | null;
+  givenName: string | null;
   role: string | null;
 };
 
@@ -108,6 +110,8 @@ export type LinktreeEntity = {
 export type NoticeAuthorEntity = {
   id: string;
   name: string;
+  familyName: string | null;
+  givenName: string | null;
   image: string | null;
   role: string | null;
 };
@@ -141,6 +145,8 @@ export type MarketConditionGrade = "A" | "B" | "C" | "D";
 export type MarketSellerEntity = {
   id: string;
   name: string;
+  familyName: string | null;
+  givenName: string | null;
   image: string | null;
   role: string | null;
 };

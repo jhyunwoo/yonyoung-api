@@ -246,7 +246,7 @@ export const registerPublicRoutes = (
       }): string => {
         const familyName = member.familyName?.trim() ?? "";
         const givenName = member.givenName?.trim() ?? "";
-        if (familyName || givenName) {
+        if (familyName.length > 0 && givenName.length > 0) {
           return `${familyName}${givenName}`;
         }
         return member.name.trim();

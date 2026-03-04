@@ -18,6 +18,8 @@ export type Actor = {
   role: Role;
   rawRole: string;
   name: string;
+  familyName: string | null;
+  givenName: string | null;
   email: string;
   generationId: string | null;
   generationIds?: string[];

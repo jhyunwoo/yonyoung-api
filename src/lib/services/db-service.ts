@@ -152,6 +152,8 @@ type UserResourceMeta = {
 const toAuditActor = (input: {
 	actorId: string | null;
 	actorName: string;
+	actorFamilyName: string | null;
+	actorGivenName: string | null;
 	actorRole: string | null;
 }): AuditActorEntity | null => {
 	if (!input.actorId) {
@@ -161,6 +163,8 @@ const toAuditActor = (input: {
 	return {
 		id: input.actorId,
 		name: input.actorName,
+		familyName: input.actorFamilyName,
+		givenName: input.actorGivenName,
 		role: input.actorRole,
 	};
 };
@@ -218,10 +222,16 @@ const listLatestAuditActorsByResourceId = async (
 			resourceId: auditLogs.resourceId,
 			actorId: auditLogs.actorId,
 			actorName: auditLogs.actorName,
+			actorFamilyName: user.familyName,
+			actorGivenName: user.givenName,
 			actorRole: auditLogs.actorRole,
 			createdAt: auditLogs.createdAt,
 		})
 		.from(auditLogs)
+		.leftJoin(
+			user,
+			and(eq(auditLogs.actorId, user.id), isNull(user.deletedAt)),
+		)
 		.where(
 			and(
 				eq(auditLogs.resourceType, resourceType),
@@ -564,6 +574,8 @@ type NoticeListRow = {
 	updatedAt: Date;
 	authorId: string;
 	authorName: string;
+	authorFamilyName: string | null;
+	authorGivenName: string | null;
 	authorImage: string | null;
 	authorRole: string | null;
 };
@@ -611,6 +623,8 @@ const serializeShowcaseImageUrls = (value: string[] | undefined): string =>
 const toNoticeAuthor = (row: NoticeListRow): NoticeAuthorEntity => ({
 	id: row.authorId,
 	name: row.authorName,
+	familyName: row.authorFamilyName,
+	givenName: row.authorGivenName,
 	image: row.authorImage,
 	role: row.authorRole,
 });
@@ -657,6 +671,8 @@ type MarketItemRow = {
 	createdAt: Date;
 	updatedAt: Date;
 	sellerName: string;
+	sellerFamilyName: string | null;
+	sellerGivenName: string | null;
 	sellerImage: string | null;
 	sellerRole: string | null;
 };
@@ -669,6 +685,8 @@ type MarketCommentRow = {
 	updatedAt: Date;
 	authorId: string;
 	authorName: string;
+	authorFamilyName: string | null;
+	authorGivenName: string | null;
 	authorImage: string | null;
 	authorRole: string | null;
 };
@@ -694,11 +712,15 @@ const parseMarketConditionGrade = (
 const mapMarketSeller = (input: {
 	id: string;
 	name: string;
+	familyName: string | null;
+	givenName: string | null;
 	image: string | null;
 	role: string | null;
 }): MarketSellerEntity => ({
 	id: input.id,
 	name: input.name,
+	familyName: input.familyName,
+	givenName: input.givenName,
 	image: input.image,
 	role: input.role,
 });
@@ -754,6 +776,8 @@ const mapMarketItemsWithImages = async (
 		seller: mapMarketSeller({
 			id: row.sellerId,
 			name: row.sellerName,
+			familyName: row.sellerFamilyName,
+			givenName: row.sellerGivenName,
 			image: row.sellerImage,
 			role: row.sellerRole,
 		}),
@@ -772,6 +796,8 @@ const toMarketCommentEntity = (
 	author: mapMarketSeller({
 		id: row.authorId,
 		name: row.authorName,
+		familyName: row.authorFamilyName,
+		givenName: row.authorGivenName,
 		image: row.authorImage,
 		role: row.authorRole,
 	}),
@@ -1054,8 +1080,24 @@ export const createDbDataService = (database: D1Database): DataService => {
 		async listAuditLogs(resourceType, resourceId, limit) {
 			const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
 			const rows = await db
-				.select()
+				.select({
+					id: auditLogs.id,
+					resourceType: auditLogs.resourceType,
+					resourceId: auditLogs.resourceId,
+					action: auditLogs.action,
+					actorId: auditLogs.actorId,
+					actorName: auditLogs.actorName,
+					actorFamilyName: user.familyName,
+					actorGivenName: user.givenName,
+					actorRole: auditLogs.actorRole,
+					changedFields: auditLogs.changedFields,
+					createdAt: auditLogs.createdAt,
+				})
 				.from(auditLogs)
+				.leftJoin(
+					user,
+					and(eq(auditLogs.actorId, user.id), isNull(user.deletedAt)),
+				)
 				.where(
 					and(
 						eq(auditLogs.resourceType, resourceType),
@@ -1074,6 +1116,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 					actor: toAuditActor({
 						actorId: row.actorId,
 						actorName: row.actorName,
+						actorFamilyName: row.actorFamilyName,
+						actorGivenName: row.actorGivenName,
 						actorRole: row.actorRole,
 					}),
 					changedFields: parseChangedFields(row.changedFields),
@@ -2294,6 +2338,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 							updatedAt: generationNotices.updatedAt,
 							authorId: user.id,
 							authorName: user.name,
+							authorFamilyName: user.familyName,
+							authorGivenName: user.givenName,
 							authorImage: user.image,
 							authorRole: user.role,
 						})
@@ -2323,6 +2369,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 							updatedAt: generationNotices.updatedAt,
 							authorId: user.id,
 							authorName: user.name,
+							authorFamilyName: user.familyName,
+							authorGivenName: user.givenName,
 							authorImage: user.image,
 							authorRole: user.role,
 						})
@@ -2395,6 +2443,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 							updatedAt: generationNotices.updatedAt,
 							authorId: user.id,
 							authorName: user.name,
+							authorFamilyName: user.familyName,
+							authorGivenName: user.givenName,
 							authorImage: user.image,
 							authorRole: user.role,
 						})
@@ -2425,6 +2475,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 							updatedAt: generationNotices.updatedAt,
 							authorId: user.id,
 							authorName: user.name,
+							authorFamilyName: user.familyName,
+							authorGivenName: user.givenName,
 							authorImage: user.image,
 							authorRole: user.role,
 						})
@@ -2532,6 +2584,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 							updatedAt: globalNotices.updatedAt,
 							authorId: user.id,
 							authorName: user.name,
+							authorFamilyName: user.familyName,
+							authorGivenName: user.givenName,
 							authorImage: user.image,
 							authorRole: user.role,
 						})
@@ -2554,6 +2608,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 							updatedAt: globalNotices.updatedAt,
 							authorId: user.id,
 							authorName: user.name,
+							authorFamilyName: user.familyName,
+							authorGivenName: user.givenName,
 							authorImage: user.image,
 							authorRole: user.role,
 						})
@@ -2609,6 +2665,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 							updatedAt: globalNotices.updatedAt,
 							authorId: user.id,
 							authorName: user.name,
+							authorFamilyName: user.familyName,
+							authorGivenName: user.givenName,
 							authorImage: user.image,
 							authorRole: user.role,
 						})
@@ -2637,6 +2695,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 							updatedAt: globalNotices.updatedAt,
 							authorId: user.id,
 							authorName: user.name,
+							authorFamilyName: user.familyName,
+							authorGivenName: user.givenName,
 							authorImage: user.image,
 							authorRole: user.role,
 						})
@@ -2759,6 +2819,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 					createdAt: marketItems.createdAt,
 					updatedAt: marketItems.updatedAt,
 					sellerName: user.name,
+					sellerFamilyName: user.familyName,
+					sellerGivenName: user.givenName,
 					sellerImage: user.image,
 					sellerRole: user.role,
 				})
@@ -2828,6 +2890,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 					createdAt: marketItems.createdAt,
 					updatedAt: marketItems.updatedAt,
 					sellerName: user.name,
+					sellerFamilyName: user.familyName,
+					sellerGivenName: user.givenName,
 					sellerImage: user.image,
 					sellerRole: user.role,
 				})
@@ -2984,6 +3048,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 					updatedAt: marketComments.updatedAt,
 					authorId: user.id,
 					authorName: user.name,
+					authorFamilyName: user.familyName,
+					authorGivenName: user.givenName,
 					authorImage: user.image,
 					authorRole: user.role,
 				})
@@ -3056,6 +3122,8 @@ export const createDbDataService = (database: D1Database): DataService => {
 					updatedAt: marketComments.updatedAt,
 					authorId: user.id,
 					authorName: user.name,
+					authorFamilyName: user.familyName,
+					authorGivenName: user.givenName,
 					authorImage: user.image,
 					authorRole: user.role,
 				})

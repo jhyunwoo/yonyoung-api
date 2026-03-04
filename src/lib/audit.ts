@@ -4,6 +4,8 @@ import type { AuditAction, AuditResourceType, DataService } from "./services/typ
 const toAuditActor = (actor: Actor) => ({
   id: actor.id,
   name: actor.name,
+  familyName: actor.familyName,
+  givenName: actor.givenName,
   role: actor.rawRole ?? actor.role ?? null,
 });
 

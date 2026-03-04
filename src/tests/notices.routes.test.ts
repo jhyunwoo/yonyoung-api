@@ -93,8 +93,15 @@ describe("notices routes", () => {
     );
     expect(response.status).toBe(200);
 
-    const body = await readJson<{ data: Array<{ id: string }> }>(response);
+    const body = await readJson<{
+      data: Array<{
+        id: string;
+        author: { familyName: string | null; givenName: string | null };
+      }>;
+    }>(response);
     expect(body.data[0]?.id).toBe(IDs.generationNotice);
+    expect(body.data[0]?.author.familyName).toBeNull();
+    expect(body.data[0]?.author.givenName).toBeNull();
     expect(listGenerationNotices).toHaveBeenCalledWith(IDs.generation);
   });
 
@@ -142,6 +149,8 @@ describe("notices routes", () => {
         author: {
           id: IDs.manager,
           name: "manager-name",
+          familyName: null,
+          givenName: null,
           image: null,
           role: "manager",
         },
@@ -169,10 +178,20 @@ describe("notices routes", () => {
 
     expect(response.status).toBe(201);
     const body = await readJson<{
-      data: { title: string; author: { id: string }; imageUrls: string[] };
+      data: {
+        title: string;
+        author: {
+          id: string;
+          familyName: string | null;
+          givenName: string | null;
+        };
+        imageUrls: string[];
+      };
     }>(response);
     expect(body.data.title).toBe("생성 공지");
     expect(body.data.author.id).toBe(IDs.manager);
+    expect(body.data.author.familyName).toBeNull();
+    expect(body.data.author.givenName).toBeNull();
     expect(body.data.imageUrls).toEqual([
       "https://example.com/notice-image-1.png",
     ]);
@@ -559,6 +578,8 @@ describe("notices routes", () => {
         author: {
           id: IDs.vicePresident,
           name: "vice-name",
+          familyName: null,
+          givenName: null,
           image: null,
           role: "vice_president",
         },
@@ -599,6 +620,8 @@ describe("notices routes", () => {
         author: {
           id: IDs.president,
           name: "president-name",
+          familyName: null,
+          givenName: null,
           image: null,
           role: "president",
         },
