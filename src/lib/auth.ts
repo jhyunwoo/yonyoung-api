@@ -15,6 +15,22 @@ const isIpHostname = (hostname: string): boolean => {
   return /^[0-9.]+$/.test(hostname) || hostname.includes(":");
 };
 
+const parseHostname = (value: string): string | undefined => {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+};
+
+const parseHost = (value: string): string | undefined => {
+  try {
+    return new URL(value).host.toLowerCase();
+  } catch {
+    return undefined;
+  }
+};
+
 const MULTI_PART_PUBLIC_SUFFIXES = new Set([
   "ac.kr",
   "co.kr",
@@ -65,14 +81,65 @@ export const resolveCrossSubDomainCookieDomain = (
   }
 };
 
+export const resolveAuthAllowedHosts = (
+  baseURL: string,
+  trustedOrigins: string[],
+): string[] => {
+  const hosts = new Set<string>();
+  const baseHost = parseHost(baseURL);
+  if (baseHost) {
+    hosts.add(baseHost);
+  }
+
+  for (const origin of trustedOrigins) {
+    const host = parseHost(origin);
+    if (host) {
+      hosts.add(host);
+    }
+  }
+
+  return [...hosts];
+};
+
+export const shouldEnableCrossSubDomainCookies = (
+  cookieDomain: string | undefined,
+  trustedOrigins: string[],
+): boolean => {
+  if (!cookieDomain) {
+    return false;
+  }
+
+  const normalizedCookieDomain = cookieDomain.toLowerCase();
+  const suffix = `.${normalizedCookieDomain}`;
+
+  return trustedOrigins.every((origin) => {
+    const hostname = parseHostname(origin);
+    if (!hostname) {
+      return false;
+    }
+
+    return hostname === normalizedCookieDomain || hostname.endsWith(suffix);
+  });
+};
+
 const createAuthWithEnv = (database: D1Database, env: AuthRuntimeEnv) => {
   const db = createDB(database);
   const crossSubDomainCookieDomain = resolveCrossSubDomainCookieDomain(
     env.baseURL,
   );
+  const enableCrossSubDomainCookies = shouldEnableCrossSubDomainCookies(
+    crossSubDomainCookieDomain,
+    env.trustedOrigins,
+  );
+  const authAllowedHosts = resolveAuthAllowedHosts(env.baseURL, env.trustedOrigins);
+  const baseURLProtocol = env.baseURL.startsWith("http://") ? "http" : "https";
 
   return betterAuth({
-    baseURL: env.baseURL,
+    baseURL: {
+      allowedHosts: authAllowedHosts,
+      fallback: env.baseURL,
+      protocol: baseURLProtocol,
+    },
     basePath: "/api/auth",
     secret: env.secret,
     trustedOrigins: env.trustedOrigins,
@@ -148,13 +215,16 @@ const createAuthWithEnv = (database: D1Database, env: AuthRuntimeEnv) => {
       }),
     ],
     advanced: {
-      crossSubDomainCookies: {
-        enabled: !!crossSubDomainCookieDomain,
-        ...(crossSubDomainCookieDomain
-          ? { domain: crossSubDomainCookieDomain }
-          : {}),
-      },
+      trustedProxyHeaders: true,
       useSecureCookies: env.baseURL.startsWith("https://"),
+      ...(enableCrossSubDomainCookies && crossSubDomainCookieDomain
+        ? {
+            crossSubDomainCookies: {
+              enabled: true,
+              domain: crossSubDomainCookieDomain,
+            },
+          }
+        : {}),
     },
   });
 };
