@@ -68,4 +68,21 @@ describe("worker runtime integration", () => {
     },
     15_000,
   );
+
+  it(
+    "/ responds with HTML page containing status hooks",
+    async () => {
+      const response = await worker!.fetch("/");
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("text/html");
+
+      const html = await response.text();
+      expect(html).toContain('id="error-banner"');
+      expect(html).toContain('id="health-refresh-btn"');
+      expect(html).toContain('data-health-endpoint="/health"');
+      expect(html).toContain("fetch(healthEndpoint");
+    },
+    15_000,
+  );
 });
