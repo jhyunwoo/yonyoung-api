@@ -53,6 +53,8 @@ export const createActor = (role: Role, id: string = IDs.member): Actor => ({
   role,
   rawRole: role,
   name: `${role}-name`,
+  familyName: null,
+  givenName: null,
   email: `${role}@example.com`,
   generationId: null,
 });
@@ -208,6 +210,8 @@ export const createGenerationNotice = (
   author: {
     id: IDs.manager,
     name: "manager-name",
+    familyName: null,
+    givenName: null,
     image: null,
     role: "manager",
   },
@@ -227,6 +231,8 @@ export const createGlobalNotice = (
   author: {
     id: IDs.vicePresident,
     name: "vice-name",
+    familyName: null,
+    givenName: null,
     image: null,
     role: "vice_president",
   },

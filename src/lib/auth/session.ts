@@ -39,6 +39,8 @@ export const getActorFromSession = async (
     columns: {
       id: true,
       name: true,
+      familyName: true,
+      givenName: true,
       email: true,
       role: true,
       generationId: true,
@@ -82,6 +84,8 @@ export const getActorFromSession = async (
     role: normalizeRole(dbUser.role),
     rawRole: dbUser.role ?? "unverified",
     name: dbUser.name,
+    familyName: dbUser.familyName,
+    givenName: dbUser.givenName,
     email: dbUser.email,
     generationId: legacyGenerationId,
     generationIds,

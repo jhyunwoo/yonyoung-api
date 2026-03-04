@@ -38,6 +38,8 @@ const createMarketItem = (
   seller: {
     id: IDs.member,
     name: "member-name",
+    familyName: null,
+    givenName: null,
     image: null,
     role: "regular_member",
   },
@@ -55,6 +57,8 @@ const createMarketComment = (
   author: {
     id: IDs.otherUser,
     name: "commenter-name",
+    familyName: null,
+    givenName: null,
     image: null,
     role: "regular_member",
   },
@@ -147,9 +151,17 @@ describe("market routes", () => {
     });
 
     expect(response.status).toBe(201);
-    const body = await readJson<{ data: { id: string; sellerId: string } }>(response);
+    const body = await readJson<{
+      data: {
+        id: string;
+        sellerId: string;
+        seller: { familyName: string | null; givenName: string | null };
+      };
+    }>(response);
     expect(body.data.id).toBe(MARKET_ITEM_ID);
     expect(body.data.sellerId).toBe(IDs.member);
+    expect(body.data.seller.familyName).toBeNull();
+    expect(body.data.seller.givenName).toBeNull();
     expect(createMarketItemMock).toHaveBeenCalledWith(
       expect.objectContaining({
         sellerId: IDs.member,
@@ -229,6 +241,8 @@ describe("market routes", () => {
             author: {
               id: IDs.otherUser,
               name: "other-user",
+              familyName: null,
+              givenName: null,
               image: null,
               role: "regular_member",
             },
@@ -266,6 +280,8 @@ describe("market routes", () => {
             author: {
               id: IDs.member,
               name: "seller-user",
+              familyName: null,
+              givenName: null,
               image: null,
               role: "regular_member",
             },
