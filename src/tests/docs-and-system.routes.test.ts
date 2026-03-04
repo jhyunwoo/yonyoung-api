@@ -104,11 +104,13 @@ describe("docs and system routes", /** describe 실행 과정에서 필요한 �
     expect(response.status).toBe(200);
 
     const body = await readJson<{
+      status: string;
       api: string;
       version: string;
       serverTime: string;
     }>(response);
 
+    expect(body.status).toBe("ok");
     expect(body.api).toBe("yonyoung-api");
     expect(body.version).toBe(packageJson.version);
     expect(Number.isNaN(Date.parse(body.serverTime))).toBe(false);
