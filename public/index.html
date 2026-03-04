@@ -1,19 +1,190 @@
 <!doctype html>
-<html lang="en">
-	<head>
-		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Hello, World!</title>
-	</head>
-	<body>
-		<h1 id="heading"></h1>
-		<script>
-			fetch('/message')
-				.then((resp) => resp.text())
-				.then((text) => {
-					const h1 = document.getElementById('heading');
-					h1.textContent = text;
-				});
-		</script>
-	</body>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Yonyoung API</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=Nanum+Myeongjo:wght@700;800&display=swap");
+
+      :root {
+        --bg-top: #f4f8ff;
+        --bg-bottom: #dfefff;
+        --ink: #10233a;
+        --ink-soft: #35506e;
+        --card-bg: rgba(255, 255, 255, 0.7);
+        --card-border: rgba(255, 255, 255, 0.9);
+        --accent: #0f78ff;
+        --accent-soft: #6ec9ff;
+        --shadow: 0 24px 64px rgba(16, 35, 58, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        color: var(--ink);
+        font-family: "Noto Sans KR", sans-serif;
+        background:
+          radial-gradient(1200px 500px at -10% -10%, #ffffffcc, transparent 70%),
+          linear-gradient(165deg, var(--bg-top), var(--bg-bottom));
+        overflow: hidden;
+      }
+
+      .orb {
+        position: fixed;
+        border-radius: 9999px;
+        filter: blur(2px);
+        pointer-events: none;
+        opacity: 0.6;
+      }
+
+      .orb-a {
+        width: 44vmax;
+        height: 44vmax;
+        top: -20vmax;
+        left: -12vmax;
+        background: radial-gradient(circle at 30% 30%, #7ee7ff, #2b88ff 70%);
+        animation: float-a 10s ease-in-out infinite alternate;
+      }
+
+      .orb-b {
+        width: 32vmax;
+        height: 32vmax;
+        bottom: -14vmax;
+        right: -8vmax;
+        background: radial-gradient(circle at 35% 35%, #8cf4d9, #2eb9cc 72%);
+        animation: float-b 12s ease-in-out infinite alternate;
+      }
+
+      .frame {
+        position: relative;
+        width: min(760px, 100%);
+        border: 1px solid var(--card-border);
+        border-radius: 28px;
+        background: var(--card-bg);
+        backdrop-filter: blur(14px);
+        box-shadow: var(--shadow);
+        padding: clamp(28px, 5vw, 56px);
+        animation: fade-up 800ms ease-out both;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ink-soft);
+        font-weight: 700;
+        margin: 0 0 18px;
+      }
+
+      .badge::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 9999px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+        box-shadow: 0 0 0 6px #0f78ff1f;
+      }
+
+      h1 {
+        margin: 0;
+        font-family: "Nanum Myeongjo", serif;
+        font-size: clamp(30px, 6vw, 52px);
+        font-weight: 800;
+        line-height: 1.28;
+        letter-spacing: -0.02em;
+      }
+
+      .subtitle {
+        margin: 18px 0 0;
+        font-size: clamp(15px, 2.2vw, 18px);
+        line-height: 1.8;
+        color: var(--ink-soft);
+      }
+
+      .divider {
+        margin: 26px 0 0;
+        height: 1px;
+        width: 100%;
+        background: linear-gradient(90deg, #9fd3ff, #ffffff00);
+      }
+
+      .footer {
+        margin: 16px 0 0;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #4c6786;
+        font-weight: 700;
+      }
+
+      @keyframes fade-up {
+        from {
+          transform: translateY(20px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+
+      @keyframes float-a {
+        from {
+          transform: translate3d(0, 0, 0) scale(1);
+        }
+        to {
+          transform: translate3d(28px, 20px, 0) scale(1.08);
+        }
+      }
+
+      @keyframes float-b {
+        from {
+          transform: translate3d(0, 0, 0) scale(1);
+        }
+        to {
+          transform: translate3d(-24px, -18px, 0) scale(1.06);
+        }
+      }
+
+      @media (max-width: 560px) {
+        body {
+          padding: 16px;
+        }
+
+        .frame {
+          border-radius: 20px;
+          padding: 24px 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="orb orb-a" aria-hidden="true"></div>
+    <div class="orb orb-b" aria-hidden="true"></div>
+    <main class="frame">
+      <p class="badge">Yonyoung API</p>
+      <h1>연영회에 오신 것을 환영합니다.</h1>
+      <p class="subtitle">
+        연영회 서비스 API가 정상적으로 실행 중입니다. 필요한 기능은 인증 후 대시보드에서
+        이용할 수 있습니다.
+      </p>
+      <div class="divider"></div>
+      <p class="footer">moveto x yonyoung</p>
+    </main>
+  </body>
 </html>

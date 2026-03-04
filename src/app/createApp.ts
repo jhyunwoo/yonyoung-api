@@ -158,6 +158,7 @@ export const createApp = (partialDependencies?: Partial<AppDependencies>) => {
 
   app.get("/", (c) => {
     return c.json({
+      status: "ok",
       api: API_NAME,
       version: API_VERSION,
       serverTime: new Date().toISOString(),
