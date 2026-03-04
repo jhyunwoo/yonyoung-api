@@ -4,13 +4,41 @@ import { betterAuth } from "better-auth";
 import * as schema from "./db/schema";
 import createDB from "./db";
 import type { AppBindings } from "../types/honoAppType";
-import { resolveAuthRuntimeEnv, type AuthRuntimeEnv } from "./config/runtime-env";
+import {
+  resolveAuthRuntimeEnv,
+  type AuthRuntimeEnv,
+} from "./config/runtime-env";
 
 const LOCAL_HOSTNAME = "localhost";
 
 const isIpHostname = (hostname: string): boolean => {
   return /^[0-9.]+$/.test(hostname) || hostname.includes(":");
 };
+
+const MULTI_PART_PUBLIC_SUFFIXES = new Set([
+  "ac.kr",
+  "co.kr",
+  "go.kr",
+  "or.kr",
+  "ne.kr",
+  "re.kr",
+  "pe.kr",
+  "co.uk",
+  "ac.uk",
+  "org.uk",
+  "me.uk",
+  "co.jp",
+  "ac.jp",
+  "or.jp",
+  "ne.jp",
+  "com.au",
+  "org.au",
+  "edu.au",
+  "net.au",
+  "com.br",
+  "org.br",
+  "net.br",
+]);
 
 export const resolveCrossSubDomainCookieDomain = (
   baseURL: string,
@@ -23,6 +51,11 @@ export const resolveCrossSubDomainCookieDomain = (
 
     const labels = hostname.split(".").filter(Boolean);
     if (labels.length < 3) {
+      return undefined;
+    }
+
+    const lastTwo = labels.slice(-2).join(".");
+    if (MULTI_PART_PUBLIC_SUFFIXES.has(lastTwo) && labels.length < 5) {
       return undefined;
     }
 
@@ -147,7 +180,10 @@ const buildAuthCacheSignature = (env: AuthRuntimeEnv): string =>
     String(env.emailAndPasswordEnabled),
   ].join("|");
 
-export const createAuth = (database: D1Database, env?: Partial<AppBindings>) => {
+export const createAuth = (
+  database: D1Database,
+  env?: Partial<AppBindings>,
+) => {
   const resolvedEnv = resolveAuthRuntimeEnv(env, false);
   const envSignature = buildAuthCacheSignature(resolvedEnv);
 
