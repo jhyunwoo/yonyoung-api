@@ -241,7 +241,7 @@ const registerResourcePresignRoute = (
       if (error instanceof MissingStorageConfigError) {
         return internalError(
           c,
-          "업로드 스토리지 설정이 누락되었습니다. R2_* 환경변수를 확인해 주세요.",
+          "업로드 스토리지 설정이 누락되었습니다. R2_* 환경변수와 공개 URL 서명 시크릿을 확인해 주세요.",
         );
       }
       return internalError(c, "업로드 URL 발급에 실패했습니다.");
@@ -339,7 +339,7 @@ const registerResourceMultipartInitRoute = (
       if (error instanceof MissingStorageConfigError) {
         return internalError(
           c,
-          "업로드 스토리지 설정이 누락되었습니다. R2_* 환경변수를 확인해 주세요.",
+          "업로드 스토리지 설정이 누락되었습니다. R2_* 환경변수와 공개 URL 서명 시크릿을 확인해 주세요.",
         );
       }
       return internalError(c, "멀티파트 업로드 초기화에 실패했습니다.");
@@ -619,7 +619,7 @@ export const registerUploadRoutes = (
       if (error instanceof MissingStorageConfigError) {
         return internalError(
           c,
-          "업로드 스토리지 설정이 누락되었습니다. R2_* 환경변수를 확인해 주세요.",
+          "업로드 스토리지 설정이 누락되었습니다. R2_* 환경변수와 공개 URL 서명 시크릿을 확인해 주세요.",
         );
       }
       return internalError(c, "업로드 URL 발급에 실패했습니다.");
@@ -682,7 +682,7 @@ export const registerUploadRoutes = (
       if (error instanceof MissingStorageConfigError) {
         return internalError(
           c,
-          "업로드 스토리지 설정이 누락되었습니다. R2_* 환경변수를 확인해 주세요.",
+          "업로드 스토리지 설정이 누락되었습니다. R2_* 환경변수와 공개 URL 서명 시크릿을 확인해 주세요.",
         );
       }
       return internalError(c, "멀티파트 업로드 초기화에 실패했습니다.");

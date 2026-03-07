@@ -246,6 +246,41 @@ describe("createR2PresignService", () => {
     ).toThrowError(MissingStorageConfigError);
   });
 
+  it("공개 미디어 전용 시크릿이 없으면 BETTER_AUTH_SECRET을 하위호환으로 사용한다", async () => {
+    const randomUuidSpy = vi
+      .spyOn(crypto, "randomUUID")
+      .mockReturnValue("22222222-3333-4444-8555-666666666666");
+    mockGetSignedUrl.mockResolvedValue(
+      "https://yonyoung-storage.example-account.r2.cloudflarestorage.com/market/user-1/image/22222222-3333-4444-8555-666666666666-photo.png?X-Amz-Algorithm=AWS4-HMAC-SHA256",
+    );
+
+    const service = createR2PresignService({
+      R2_S3_ENDPOINT: "https://example-account.r2.cloudflarestorage.com",
+      R2_ACCESS_KEY_ID: "key",
+      R2_SECRET_ACCESS_KEY: "secret",
+      R2_BUCKET: "yonyoung-storage",
+      BETTER_AUTH_URL: "https://app.example.com",
+      BETTER_AUTH_SECRET: "test-better-auth-secret-with-at-least-32-chars",
+    } as never);
+
+    const result = await service.issuePresignedPutUrl({
+      actorId: "user-1",
+      resource: "market",
+      slot: "image",
+      fileName: "photo.png",
+      contentType: "image/png",
+      fileSize: 1024,
+    });
+
+    const publicUrl = new URL(result.publicUrl);
+    expect(publicUrl.origin).toBe("https://app.example.com");
+    expect(publicUrl.pathname).toBe(
+      "/api/public/media/market/user-1/image/22222222-3333-4444-8555-666666666666-photo.png",
+    );
+    expect(publicUrl.searchParams.get("sig")).toMatch(/^[A-Za-z0-9_-]+$/);
+    randomUuidSpy.mockRestore();
+  });
+
   it("objectKey 파서는 정확한 4단계 경로만 허용한다", () => {
     expect(parseManagedObjectKey("activities/user-1/cover/file.png")).toEqual({
       resourcePath: "activities",

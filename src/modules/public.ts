@@ -174,7 +174,7 @@ export const registerPublicRoutes = (
     if (!signingSecret) {
       return internalError(
         c,
-        "스토리지 공개 URL 서명 설정(R2_PUBLIC_URL_SIGNING_SECRET)이 누락되었습니다.",
+        "스토리지 공개 URL 서명 설정(R2_PUBLIC_URL_SIGNING_SECRET 또는 BETTER_AUTH_SECRET)이 누락되었습니다.",
       );
     }
 
