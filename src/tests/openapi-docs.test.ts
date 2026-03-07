@@ -70,31 +70,50 @@ const createDocsApp = (input: CreateDocsAppInput = {}) => {
 };
 
 describe("OpenAPI docs routes", () => {
-  it("docs 인증 활성화 여부와 무관하게 비로그인 접근은 /api/docs에서 200을 반환한다", async () => {
+  it("docs 인증 활성화 시 비로그인 접근은 /api/docs에서 401을 반환한다", async () => {
     const app = createDocsApp({ requireDocsAuth: true });
 
     const response = await app.request("/api/docs");
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(401);
   });
 
-  it("docs 인증 활성화 여부와 무관하게 비로그인 접근은 /api/openapi.json에서 200을 반환한다", async () => {
+  it("docs 인증 활성화 시 비로그인 접근은 /api/openapi.json에서 401을 반환한다", async () => {
     const app = createDocsApp({ requireDocsAuth: true });
 
     const response = await app.request("/api/openapi.json");
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(401);
   });
 
-  it("docs 인증 활성화 시 로그인 사용자는 /api/docs와 /api/openapi.json에 접근할 수 있다", async () => {
+  it("docs 인증 활성화 시 관리자 권한 사용자는 /api/docs와 /api/openapi.json에 접근할 수 있다", async () => {
+    const app = createDocsApp({
+      actor: createActor("manager"),
+      requireDocsAuth: true,
+    });
+
+    const docsResponse = await app.request("/api/docs");
+    expect(docsResponse.status).toBe(200);
+    expect(docsResponse.headers.get("cache-control")).toBe(
+      "private, no-store, max-age=0",
+    );
+
+    const openApiResponse = await app.request("/api/openapi.json");
+    expect(openApiResponse.status).toBe(200);
+    expect(openApiResponse.headers.get("cache-control")).toBe(
+      "private, no-store, max-age=0",
+    );
+  });
+
+  it("docs 인증 활성화 시 일반 회원은 /api/docs와 /api/openapi.json에 접근할 수 없다", async () => {
     const app = createDocsApp({
       actor: createActor("regular_member"),
       requireDocsAuth: true,
     });
 
     const docsResponse = await app.request("/api/docs");
-    expect(docsResponse.status).toBe(200);
+    expect(docsResponse.status).toBe(403);
 
     const openApiResponse = await app.request("/api/openapi.json");
-    expect(openApiResponse.status).toBe(200);
+    expect(openApiResponse.status).toBe(403);
   });
 
   it("docs 인증 비활성화 상태에서 통합 OpenAPI 문서를 반환한다", async () => {
@@ -143,10 +162,10 @@ describe("OpenAPI docs routes", () => {
 
     const response = await app.request("/api/docs");
     expect(response.status).toBe(200);
-    const csp = response.headers.get("content-security-policy-report-only");
+    const csp = response.headers.get("content-security-policy");
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain("https://cdn.jsdelivr.net");
-    expect(response.headers.get("content-security-policy")).toBeNull();
+    expect(response.headers.get("content-security-policy-report-only")).toBeNull();
     const html = await response.text();
     expect(html.length).toBeGreaterThan(0);
     expect(html.toLowerCase()).toContain("scalar");

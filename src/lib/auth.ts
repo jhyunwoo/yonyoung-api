@@ -132,7 +132,8 @@ const createAuthWithEnv = (database: D1Database, env: AuthRuntimeEnv) => {
     env.trustedOrigins,
   );
   const authAllowedHosts = resolveAuthAllowedHosts(env.baseURL, env.trustedOrigins);
-  const baseURLProtocol = env.baseURL.startsWith("http://") ? "http" : "https";
+  const useSecureCookies = env.baseURL.startsWith("https://");
+  const baseURLProtocol = useSecureCookies ? "https" : "http";
 
   return betterAuth({
     baseURL: {
@@ -216,7 +217,12 @@ const createAuthWithEnv = (database: D1Database, env: AuthRuntimeEnv) => {
     ],
     advanced: {
       trustedProxyHeaders: true,
-      useSecureCookies: env.baseURL.startsWith("https://"),
+      useSecureCookies,
+      defaultCookieAttributes: {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: useSecureCookies,
+      },
       ...(enableCrossSubDomainCookies && crossSubDomainCookieDomain
         ? {
             crossSubDomainCookies: {

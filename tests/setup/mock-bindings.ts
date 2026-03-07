@@ -150,7 +150,10 @@ export const createHealthyBindings = (): AppBindings => {
     R2_SECRET_ACCESS_KEY: "secret",
     R2_BUCKET: "yonyoung-storage",
     R2_PUBLIC_BASE_URL: "https://storage.example.com",
+    R2_PUBLIC_URL_SIGNING_SECRET:
+      "test-public-url-signing-secret-at-least-32-chars",
     BETTER_AUTH_URL: "https://api.example.com",
     BETTER_AUTH_TRUSTED_ORIGINS: "https://app.example.com",
+    BETTER_AUTH_SECRET: "test-better-auth-secret-with-at-least-32-chars",
   } as AppBindings;
 };

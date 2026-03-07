@@ -19,6 +19,7 @@ import { mountDomainRouters } from "../routes";
 import { errorHandler } from "./middleware/errorHandler";
 import { loggerMiddleware } from "./middleware/logger";
 import { maxBodySizeMiddleware } from "./middleware/body-size";
+import { apiCsrfProtectionMiddleware } from "./middleware/csrf";
 import { requestIdMiddleware } from "./middleware/requestId";
 import { apiSecurityHeadersMiddleware } from "./middleware/securityHeaders";
 import { legacyApiRedirectMiddleware } from "./middleware/legacyApiRedirect";
@@ -151,6 +152,7 @@ export const createApp = (partialDependencies?: Partial<AppDependencies>) => {
   app.use("/api/*", apiCorsMiddleware);
   app.options("/api/*", apiCorsMiddleware);
 
+  app.use("/api/*", apiCsrfProtectionMiddleware);
   app.use("/api/*", apiSecurityHeadersMiddleware);
   app.use("/ui", apiSecurityHeadersMiddleware);
 

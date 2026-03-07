@@ -150,7 +150,10 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     const deleteUser = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => true);
     const app = createTestApp({
       actor: createActor("vice_president", IDs.vicePresident),
-      dataService: createDataServiceMock({ deleteUser }),
+      dataService: createDataServiceMock({
+        getUserById: fn(async () => createUser({ id: IDs.otherUser, role: "regular_member" })),
+        deleteUser,
+      }),
     });
 
     const response = await app.request(`/api/users/${IDs.otherUser}`, {
@@ -165,7 +168,10 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     const deleteUser = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => false);
     const app = createTestApp({
       actor: createActor("vice_president", IDs.vicePresident),
-      dataService: createDataServiceMock({ deleteUser }),
+      dataService: createDataServiceMock({
+        getUserById: fn(async () => null),
+        deleteUser,
+      }),
     });
 
     const response = await app.request(`/api/users/${IDs.otherUser}`, {
@@ -174,6 +180,67 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
 
     expect(response.status).toBe(404);
     await expectErrorCode(response, "NOT_FOUND");
+  });
+
+  it("vice_president는 회장 정보를 수정할 수 없다", async () => {
+    const updateUser = fn(async () => createUser({ id: IDs.president, role: "president" }));
+    const app = createTestApp({
+      actor: createActor("vice_president", IDs.vicePresident),
+      dataService: createDataServiceMock({
+        getUserById: fn(async () => createUser({ id: IDs.president, role: "president" })),
+        updateUser,
+      }),
+    });
+
+    const response = await app.request(`/api/users/${IDs.president}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "updated-president" }),
+    });
+
+    expect(response.status).toBe(403);
+    await expectErrorCode(response, "FORBIDDEN");
+    expect(updateUser).not.toHaveBeenCalled();
+  });
+
+  it("vice_president는 회장 계정을 삭제할 수 없다", async () => {
+    const deleteUser = fn(async () => true);
+    const app = createTestApp({
+      actor: createActor("vice_president", IDs.vicePresident),
+      dataService: createDataServiceMock({
+        getUserById: fn(async () => createUser({ id: IDs.president, role: "president" })),
+        countUsersByRole: fn(async () => 2),
+        deleteUser,
+      }),
+    });
+
+    const response = await app.request(`/api/users/${IDs.president}`, {
+      method: "DELETE",
+    });
+
+    expect(response.status).toBe(403);
+    await expectErrorCode(response, "FORBIDDEN");
+    expect(deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("마지막 회장은 자기 계정을 삭제할 수 없다", async () => {
+    const deleteUser = fn(async () => true);
+    const app = createTestApp({
+      actor: createActor("president", IDs.president),
+      dataService: createDataServiceMock({
+        getUserById: fn(async () => createUser({ id: IDs.president, role: "president" })),
+        countUsersByRole: fn(async () => 1),
+        deleteUser,
+      }),
+    });
+
+    const response = await app.request(`/api/users/${IDs.president}`, {
+      method: "DELETE",
+    });
+
+    expect(response.status).toBe(400);
+    await expectErrorCode(response, "BAD_REQUEST");
+    expect(deleteUser).not.toHaveBeenCalled();
   });
 
   it("member 계열 사용자는 타인 계정을 삭제할 수 없다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
@@ -485,7 +552,7 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
       actor: createActor("president", IDs.president),
       dataService: createDataServiceMock({
         getUserById: fn(async () => createUser({ id: IDs.president, role: "president" })),
-        listUsers: fn(async () => [createUser({ id: IDs.president, role: "president" })]),
+        countUsersByRole: fn(async () => 1),
         updateUser,
       }),
     });
@@ -667,6 +734,35 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
 
     expect(response.status).toBe(400);
     await expectErrorCode(response, "BAD_REQUEST");
+    expect(bulkUpdateUsersRole).not.toHaveBeenCalled();
+    expect(listUsersByIds).toHaveBeenCalledWith([IDs.president]);
+  });
+
+  it("bulk-role 요청에서 vice_president는 회장을 대상으로 변경할 수 없다", async () => {
+    const bulkUpdateUsersRole = fn(async () => []);
+    const listUsersByIds = fn(async () => [
+      createUser({ id: IDs.president, role: "president" }),
+    ]);
+    const app = createTestApp({
+      actor: createActor("vice_president", IDs.vicePresident),
+      dataService: createDataServiceMock({
+        listUsersByIds,
+        countUsersByRole: fn(async () => 2),
+        bulkUpdateUsersRole,
+      }),
+    });
+
+    const response = await app.request("/api/users/bulk-role", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        userIds: [IDs.president],
+        role: "manager",
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    await expectErrorCode(response, "FORBIDDEN");
     expect(bulkUpdateUsersRole).not.toHaveBeenCalled();
     expect(listUsersByIds).toHaveBeenCalledWith([IDs.president]);
   });

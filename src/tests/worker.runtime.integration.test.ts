@@ -21,6 +21,8 @@ describe("worker runtime integration", () => {
         R2_ACCESS_KEY_ID: "key",
         R2_SECRET_ACCESS_KEY: "secret",
         R2_BUCKET: "yonyoung-storage",
+        R2_PUBLIC_URL_SIGNING_SECRET:
+          "test-public-url-signing-secret-at-least-32-characters",
       },
     });
   }, 120_000);
@@ -60,10 +62,10 @@ describe("worker runtime integration", () => {
       const response = await worker!.fetch("/api/unknown-endpoint");
 
       expect(response.status).toBe(404);
-      expect(response.headers.get("content-security-policy-report-only")).toContain(
+      expect(response.headers.get("content-security-policy")).toContain(
         "default-src 'none'",
       );
-      expect(response.headers.get("content-security-policy")).toBeNull();
+      expect(response.headers.get("content-security-policy-report-only")).toBeNull();
       expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     },
     15_000,

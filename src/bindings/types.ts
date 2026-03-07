@@ -18,6 +18,7 @@ export type Bindings = CloudflareBindings & {
   R2_SECRET_ACCESS_KEY?: string;
   R2_BUCKET?: string;
   R2_PUBLIC_BASE_URL?: string;
+  R2_PUBLIC_URL_SIGNING_SECRET?: string;
   DOCS_AUTH_IN_PROD?: string;
   D1_SESSION_CONSISTENCY?: string;
   D1_WRITE_RETRY_ENABLED?: string;

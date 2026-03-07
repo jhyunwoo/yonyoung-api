@@ -10,14 +10,23 @@ import {
   ApiSiteSettingsSchema,
 } from "../lib/openapi/schemas";
 import { dataResponse, errorResponses } from "../lib/openapi/responses";
-import { badRequest, notFound, ok } from "../lib/http/response";
+import { badRequest, internalError, notFound, ok } from "../lib/http/response";
 import { respondWithPublicCache } from "../lib/http/public-cache";
 import { AppDependencies } from "../lib/services/dependencies";
 import HonoAppType from "../types/honoAppType";
 import { sanitizeRichTextHtml } from "../lib/content/rich-text";
 import { sanitizeExhibitionRichText } from "../lib/content/exhibition-rich-text";
+import { createR2Client, resolveR2Bucket } from "../infra/r2/client";
+import {
+  ALLOWED_IMAGE_CONTENT_TYPES,
+  parseManagedObjectKey,
+  resolvePublicObjectSigningSecret,
+  verifySignedPublicObjectSignature,
+} from "../lib/storage/presign";
 
 type App = OpenAPIHono<HonoAppType>;
+const PUBLIC_MEDIA_CACHE_CONTROL =
+  "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400";
 
 const sanitizeExhibitionDescriptionField = <T extends { description: string }>(
   exhibition: T,
@@ -150,6 +159,69 @@ export const registerPublicRoutes = (
   app: App,
   dependencies: AppDependencies,
 ) => {
+  app.get("/api/public/media/*", async (c) => {
+    const objectKey = c.req.param("*");
+    if (typeof objectKey !== "string" || objectKey.length === 0) {
+      return notFound(c);
+    }
+
+    const parsedObjectKey = parseManagedObjectKey(objectKey);
+    if (!parsedObjectKey) {
+      return notFound(c);
+    }
+
+    const signingSecret = resolvePublicObjectSigningSecret(c.env);
+    if (!signingSecret) {
+      return internalError(
+        c,
+        "스토리지 공개 URL 서명 설정(R2_PUBLIC_URL_SIGNING_SECRET)이 누락되었습니다.",
+      );
+    }
+
+    const signature = c.req.query("sig");
+    const isValidSignature = await verifySignedPublicObjectSignature({
+      objectKey,
+      signature,
+      signingSecret,
+    });
+    if (!isValidSignature) {
+      return notFound(c);
+    }
+
+    const bucket = resolveR2Bucket(c.env);
+    const object = await createR2Client(bucket).getObject(objectKey);
+    if (!object) {
+      return notFound(c);
+    }
+
+    const contentType = object.httpMetadata?.contentType ?? "";
+    if (
+      !ALLOWED_IMAGE_CONTENT_TYPES.includes(
+        contentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number],
+      )
+    ) {
+      return notFound(c);
+    }
+
+    const headers = new Headers();
+    headers.set("Cache-Control", PUBLIC_MEDIA_CACHE_CONTROL);
+    headers.set("Content-Type", contentType);
+    headers.set("X-Content-Type-Options", "nosniff");
+
+    if (object.httpEtag) {
+      headers.set("ETag", object.httpEtag);
+    }
+
+    if (typeof object.size === "number" && Number.isFinite(object.size)) {
+      headers.set("Content-Length", String(object.size));
+    }
+
+    return new Response(object.body, {
+      status: 200,
+      headers,
+    });
+  });
+
   app.openapi(listPublicActivitiesRoute, async (c): Promise<any> =>
     respondWithPublicCache(c, async () => {
       const data = await dependencies.getDataService(c).listPublicActivities();

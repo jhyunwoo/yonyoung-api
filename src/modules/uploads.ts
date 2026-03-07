@@ -37,6 +37,7 @@ import {
 import {
   ALLOWED_IMAGE_CONTENT_TYPES,
   UPLOAD_LIMITS,
+  parseManagedObjectKey,
 } from "../lib/storage/presign";
 import { R2_STORAGE_LIMIT_BYTES } from "../lib/storage/usage";
 
@@ -67,14 +68,6 @@ const resourceByPath: Record<UploadResourcePath, Resource | "user"> = {
   users: "user",
   notices: "notice",
   market: "market",
-};
-
-const slotAllowlistByPath: Record<UploadResourcePath, UploadSlot[]> = {
-  activities: ["cover", "detail"],
-  exhibitions: ["cover", "detail"],
-  users: ["profile"],
-  notices: ["image"],
-  market: ["image"],
 };
 
 const isAllowedContentType = (contentType: string): boolean =>
@@ -145,42 +138,12 @@ const isUserProfileUploadAllowed = (role: Role): boolean => {
   return can(role, "user", "update") || isMemberLikeRole(role);
 };
 
-const parseUploadObjectKey = (
-  objectKey: string,
-): {
-  resourcePath: UploadResourcePath;
-  actorId: string;
-  slot: UploadSlot;
-} | null => {
-  const [resourcePathRaw, actorId, slotRaw] = objectKey.split("/");
-  if (!resourcePathRaw || !actorId || !slotRaw) {
-    return null;
-  }
-
-  if (!Object.hasOwn(resourceByPath, resourcePathRaw)) {
-    return null;
-  }
-
-  const resourcePath = resourcePathRaw as UploadResourcePath;
-  const slot = slotRaw as UploadSlot;
-
-  if (!slotAllowlistByPath[resourcePath].includes(slot)) {
-    return null;
-  }
-
-  return {
-    resourcePath,
-    actorId,
-    slot,
-  };
-};
-
 const ensureMultipartOwnership = (input: {
   actor: Pick<Actor, "id" | "role">;
   objectKey: string;
   c: Parameters<typeof badRequest>[0];
 }): Response | null => {
-  const parsed = parseUploadObjectKey(input.objectKey);
+  const parsed = parseManagedObjectKey(input.objectKey);
   if (!parsed) {
     return badRequest(input.c, "objectKey 형식이 올바르지 않습니다.");
   }

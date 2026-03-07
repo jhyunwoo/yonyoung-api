@@ -51,7 +51,7 @@ export const registerDashboardRoutes = (
       return actorResult.response;
     }
 
-    if (!can(actorResult.actor.role, "generation", "read")) {
+    if (!can(actorResult.actor.role, "user", "read")) {
       return forbidden(c);
     }
 
