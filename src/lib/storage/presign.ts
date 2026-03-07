@@ -124,13 +124,21 @@ const readRuntimeValue = (env: AppBindings, key: keyof AppBindings): string | un
 export const resolvePublicObjectSigningSecret = (
   env: AppBindings,
 ): string | undefined => {
-  return (
-    readRuntimeValue(env, PUBLIC_URL_SIGNING_SECRET_ENV_KEY as keyof AppBindings) ??
+  return resolvePublicObjectSigningSecrets(env)[0];
+};
+
+export const resolvePublicObjectSigningSecrets = (
+  env: AppBindings,
+): string[] => {
+  const candidates = [
+    readRuntimeValue(env, PUBLIC_URL_SIGNING_SECRET_ENV_KEY as keyof AppBindings),
     readRuntimeValue(
       env,
       LEGACY_PUBLIC_URL_SIGNING_SECRET_ENV_KEY as keyof AppBindings,
-    )
-  );
+    ),
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  return [...new Set(candidates)];
 };
 
 const sanitizeFileName = (fileName: string): string => {
@@ -307,15 +315,29 @@ export const buildSignedPublicObjectUrl = async (input: {
 export const verifySignedPublicObjectSignature = async (input: {
   objectKey: string;
   signature: string | null | undefined;
-  signingSecret: string;
+  signingSecret?: string;
+  signingSecrets?: readonly string[];
 }): Promise<boolean> => {
   const signature = input.signature?.trim();
   if (!signature) {
     return false;
   }
 
-  const expected = await signObjectKey(input.objectKey, input.signingSecret);
-  return timingSafeEqualString(expected, signature);
+  const signingSecrets = input.signingSecrets ?? [];
+  const candidateSecrets =
+    input.signingSecret === undefined
+      ? [...signingSecrets]
+      : [input.signingSecret, ...signingSecrets];
+  const uniqueSecrets = [...new Set(candidateSecrets.filter((value) => value.length > 0))];
+
+  for (const secret of uniqueSecrets) {
+    const expected = await signObjectKey(input.objectKey, secret);
+    if (timingSafeEqualString(expected, signature)) {
+      return true;
+    }
+  }
+
+  return false;
 };
 
 export const createR2PresignService = (env: AppBindings): PresignService => {
