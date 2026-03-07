@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { buildSignedPublicObjectUrl } from "../lib/storage/presign";
 import {
   IDs,
   createActivity,
@@ -15,7 +16,123 @@ import {
   readJson,
 } from "./test-helpers";
 
+const PUBLIC_MEDIA_SECRET =
+  "test-public-media-signing-secret-at-least-32-chars";
+
+const createImageBody = () =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1, 2, 3]));
+      controller.close();
+    },
+  });
+
+const createR2BucketMock = (object: R2ObjectBody | null): R2Bucket =>
+  ({
+    get: vi.fn(async () => object),
+    put: vi.fn(),
+    head: vi.fn(),
+    delete: vi.fn(),
+    list: vi.fn(),
+  }) as unknown as R2Bucket;
+
 describe("public routes", () => {
+  it("서명된 공개 미디어 URL로 이미지를 조회한다", async () => {
+    const objectKey = "market/user-member-0001/image/example-image.jpeg";
+    const publicUrl = await buildSignedPublicObjectUrl({
+      baseUrl: "https://example.com",
+      objectKey,
+      signingSecret: PUBLIC_MEDIA_SECRET,
+    });
+    const bucket = createR2BucketMock({
+      body: createImageBody(),
+      size: 3,
+      httpEtag: '"etag-1"',
+      httpMetadata: {
+        contentType: "image/jpeg",
+      },
+    } as R2ObjectBody);
+    const app = createTestApp({
+      actor: null,
+    });
+
+    const response = await app.request(
+      publicUrl,
+      {},
+      {
+        BETTER_AUTH_SECRET: PUBLIC_MEDIA_SECRET,
+        r2: bucket,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/jpeg");
+    expect(response.headers.get("etag")).toBe('"etag-1"');
+    expect(response.headers.get("cache-control")).toContain("max-age=300");
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(
+      new Uint8Array([1, 2, 3]),
+    );
+  });
+
+  it("R2 메타데이터의 content-type이 비어 있어도 파일 확장자로 복구한다", async () => {
+    const objectKey = "market/user-member-0001/image/example-image.jpeg";
+    const publicUrl = await buildSignedPublicObjectUrl({
+      baseUrl: "https://example.com",
+      objectKey,
+      signingSecret: PUBLIC_MEDIA_SECRET,
+    });
+    const app = createTestApp({
+      actor: null,
+    });
+
+    const response = await app.request(
+      publicUrl,
+      {},
+      {
+        BETTER_AUTH_SECRET: PUBLIC_MEDIA_SECRET,
+        r2: createR2BucketMock({
+          body: createImageBody(),
+          size: 3,
+          httpMetadata: {},
+        } as R2ObjectBody),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/jpeg");
+  });
+
+  it("전용 공개 URL 시크릿이 추가되어도 기존 BETTER_AUTH_SECRET 서명을 허용한다", async () => {
+    const objectKey = "market/user-member-0001/image/example-image.jpeg";
+    const publicUrl = await buildSignedPublicObjectUrl({
+      baseUrl: "https://example.com",
+      objectKey,
+      signingSecret: PUBLIC_MEDIA_SECRET,
+    });
+    const app = createTestApp({
+      actor: null,
+    });
+
+    const response = await app.request(
+      publicUrl,
+      {},
+      {
+        BETTER_AUTH_SECRET: PUBLIC_MEDIA_SECRET,
+        R2_PUBLIC_URL_SIGNING_SECRET:
+          "new-dedicated-public-media-secret-at-least-32-chars",
+        r2: createR2BucketMock({
+          body: createImageBody(),
+          size: 3,
+          httpMetadata: {
+            contentType: "image/jpeg",
+          },
+        } as R2ObjectBody),
+      },
+    );
+
+    expect(response.status).toBe(200);
+  });
+
   it("비로그인 접근 시 공개 활동 목록을 조회한다", async () => {
     const listPublicActivities = fn(async () => [
       createActivity({

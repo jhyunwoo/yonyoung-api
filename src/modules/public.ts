@@ -20,7 +20,7 @@ import { createR2Client, resolveR2Bucket } from "../infra/r2/client";
 import {
   ALLOWED_IMAGE_CONTENT_TYPES,
   parseManagedObjectKey,
-  resolvePublicObjectSigningSecret,
+  resolvePublicObjectSigningSecrets,
   verifySignedPublicObjectSignature,
 } from "../lib/storage/presign";
 
@@ -41,6 +41,47 @@ const sanitizeActivityDescriptionField = <T extends { description: string }>(
   ...activity,
   description: sanitizeRichTextHtml(activity.description),
 });
+
+const CONTENT_TYPE_BY_EXTENSION = {
+  avif: "image/avif",
+  gif: "image/gif",
+  heic: "image/heic",
+  heif: "image/heif",
+  jpeg: "image/jpeg",
+  jpg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+} satisfies Record<
+  string,
+  (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number]
+>;
+
+const resolvePublicMediaContentType = (
+  objectKey: string,
+  metadataContentType: string | null | undefined,
+): (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number] | null => {
+  const normalizedContentType = metadataContentType?.trim().toLowerCase();
+  if (
+    normalizedContentType &&
+    ALLOWED_IMAGE_CONTENT_TYPES.includes(
+      normalizedContentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number],
+    )
+  ) {
+    return normalizedContentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number];
+  }
+
+  const fileName = objectKey.split("/").at(-1)?.toLowerCase() ?? "";
+  const extension = fileName.split(".").at(-1);
+  if (!extension) {
+    return null;
+  }
+
+  if (!(extension in CONTENT_TYPE_BY_EXTENSION)) {
+    return null;
+  }
+
+  return CONTENT_TYPE_BY_EXTENSION[extension as keyof typeof CONTENT_TYPE_BY_EXTENSION];
+};
 
 const listPublicActivitiesRoute = createRoute({
   method: "get",
@@ -159,8 +200,8 @@ export const registerPublicRoutes = (
   app: App,
   dependencies: AppDependencies,
 ) => {
-  app.get("/api/public/media/*", async (c) => {
-    const objectKey = c.req.param("*");
+  app.get("/api/public/media/:objectKey{.+}", async (c) => {
+    const objectKey = c.req.param("objectKey");
     if (typeof objectKey !== "string" || objectKey.length === 0) {
       return notFound(c);
     }
@@ -170,8 +211,8 @@ export const registerPublicRoutes = (
       return notFound(c);
     }
 
-    const signingSecret = resolvePublicObjectSigningSecret(c.env);
-    if (!signingSecret) {
+    const signingSecrets = resolvePublicObjectSigningSecrets(c.env);
+    if (signingSecrets.length === 0) {
       return internalError(
         c,
         "스토리지 공개 URL 서명 설정(R2_PUBLIC_URL_SIGNING_SECRET 또는 BETTER_AUTH_SECRET)이 누락되었습니다.",
@@ -182,7 +223,7 @@ export const registerPublicRoutes = (
     const isValidSignature = await verifySignedPublicObjectSignature({
       objectKey,
       signature,
-      signingSecret,
+      signingSecrets,
     });
     if (!isValidSignature) {
       return notFound(c);
@@ -194,12 +235,11 @@ export const registerPublicRoutes = (
       return notFound(c);
     }
 
-    const contentType = object.httpMetadata?.contentType ?? "";
-    if (
-      !ALLOWED_IMAGE_CONTENT_TYPES.includes(
-        contentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number],
-      )
-    ) {
+    const contentType = resolvePublicMediaContentType(
+      objectKey,
+      object.httpMetadata?.contentType,
+    );
+    if (!contentType) {
       return notFound(c);
     }
 
