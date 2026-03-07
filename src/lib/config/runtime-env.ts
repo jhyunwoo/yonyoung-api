@@ -82,14 +82,58 @@ const parseBooleanString = (
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 };
 
+const isLoopbackHostname = (hostname: string): boolean => {
+  const normalized = hostname.toLowerCase();
+  return (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "::1" ||
+    normalized === "[::1]" ||
+    normalized.endsWith(".localhost")
+  );
+};
+
+const normalizeUrl = (
+  value: string,
+  options: {
+    label: string;
+    preservePath?: boolean;
+  },
+): string => {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${options.label} must be a valid absolute URL`);
+  }
+
+  if (parsed.protocol !== "https:" && !isLoopbackHostname(parsed.hostname)) {
+    throw new Error(`${options.label} must use https outside localhost`);
+  }
+
+  if (!options.preservePath) {
+    return parsed.origin;
+  }
+
+  const normalizedPath = parsed.pathname.replace(/\/+$/, "");
+  const pathname = normalizedPath.length > 0 ? normalizedPath : "";
+  return `${parsed.origin}${pathname}${parsed.search}${parsed.hash}`;
+};
+
 export const resolveAuthRuntimeEnv = (
   env: Partial<AppBindings> | undefined,
   allowDevDefaults: boolean,
 ): AuthRuntimeEnv => {
-  const baseURL = readRuntimeString(
-    env,
-    "BETTER_AUTH_URL",
-    allowDevDefaults ? AUTH_DEV_DEFAULTS.baseURL : undefined,
+  const baseURL = normalizeUrl(
+    readRuntimeString(
+      env,
+      "BETTER_AUTH_URL",
+      allowDevDefaults ? AUTH_DEV_DEFAULTS.baseURL : undefined,
+    ),
+    {
+      label: "BETTER_AUTH_URL",
+      preservePath: true,
+    },
   );
 
   const trustedOriginsRaw = readRuntimeString(
@@ -98,9 +142,14 @@ export const resolveAuthRuntimeEnv = (
     allowDevDefaults ? AUTH_DEV_DEFAULTS.trustedOrigins : undefined,
   );
 
-  const trustedOrigins = parseCsv(trustedOriginsRaw);
-  if (!trustedOrigins.includes(baseURL)) {
-    trustedOrigins.push(baseURL);
+  const trustedOrigins = parseCsv(trustedOriginsRaw).map((origin) =>
+    normalizeUrl(origin, {
+      label: "BETTER_AUTH_TRUSTED_ORIGINS",
+    }),
+  );
+  const baseOrigin = new URL(baseURL).origin;
+  if (!trustedOrigins.includes(baseOrigin)) {
+    trustedOrigins.push(baseOrigin);
   }
 
   const emailAndPasswordEnabled = parseBooleanString(
@@ -108,14 +157,18 @@ export const resolveAuthRuntimeEnv = (
       readProcessValue("BETTER_AUTH_EMAIL_AND_PASSWORD_ENABLED"),
     false,
   );
+  const secret = readRuntimeString(
+    env,
+    "BETTER_AUTH_SECRET",
+    allowDevDefaults ? AUTH_DEV_DEFAULTS.secret : undefined,
+  );
+  if (secret.length < 32) {
+    throw new Error("BETTER_AUTH_SECRET must be at least 32 characters long");
+  }
 
   return {
     baseURL,
-    secret: readRuntimeString(
-      env,
-      "BETTER_AUTH_SECRET",
-      allowDevDefaults ? AUTH_DEV_DEFAULTS.secret : undefined,
-    ),
+    secret,
     trustedOrigins,
     googleClientId: readRuntimeString(
       env,

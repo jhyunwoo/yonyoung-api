@@ -2,8 +2,10 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { Scalar } from "@scalar/hono-api-reference";
 import type { Context } from "hono";
 import { OPENAPI_BASE_DOCUMENT, OPENAPI_JSON_PATHS, OPENAPI_UI_PATHS } from "../app/openapi";
+import { can } from "../lib/authorization/policy";
 import { runInBackground } from "../lib/http/background-task";
-import { internalError } from "../lib/http/response";
+import { forbidden, internalError } from "../lib/http/response";
+import { requireActor } from "../lib/http/authz";
 import { enrichOpenApiDocument } from "../lib/openapi/enrich";
 import { mergeOpenApiDocuments, type OpenAPIDocument } from "../lib/openapi/merge";
 import { errorResponses } from "../lib/openapi/responses";
@@ -17,6 +19,7 @@ const OPENAPI_CACHE_TTL_MS = 120_000;
 const OPENAPI_CACHE_STALE_MS = 300_000;
 const DOCS_CACHE_CONTROL =
   "public, max-age=30, s-maxage=120, stale-while-revalidate=300";
+const DOCS_PRIVATE_CACHE_CONTROL = "private, no-store, max-age=0";
 
 type OpenApiCacheEntry = {
   document: OpenAPIDocument;
@@ -103,8 +106,36 @@ const cacheOpenApiDocument = (cacheKey: string, document: OpenAPIDocument): void
   });
 };
 
-const setDocsCacheHeaders = (c: Context<HonoAppType>): void => {
-  c.header("Cache-Control", DOCS_CACHE_CONTROL);
+const setDocsCacheHeaders = (
+  c: Context<HonoAppType>,
+  options: {
+    requireAuth: boolean;
+  },
+): void => {
+  c.header(
+    "Cache-Control",
+    options.requireAuth ? DOCS_PRIVATE_CACHE_CONTROL : DOCS_CACHE_CONTROL,
+  );
+};
+
+const ensureDocsAccess = async (
+  c: Context<HonoAppType>,
+  dependencies: AppDependencies,
+): Promise<Response | null> => {
+  if (!dependencies.shouldRequireDocsAuth(c)) {
+    return null;
+  }
+
+  const actorResult = await requireActor(c, dependencies);
+  if ("response" in actorResult) {
+    return actorResult.response;
+  }
+
+  if (!can(actorResult.actor.role, "user", "read")) {
+    return forbidden(c, "OpenAPI 문서에 접근할 권한이 없습니다.");
+  }
+
+  return null;
 };
 
 /**
@@ -124,12 +155,18 @@ export const registerDocsRoutes = (
 
   for (const route of openApiJsonRoutes) {
     app.openapi(route, async (c): Promise<any> => {
+      const denied = await ensureDocsAccess(c, dependencies);
+      if (denied) {
+        return denied;
+      }
+
+      const requireDocsAuth = dependencies.shouldRequireDocsAuth(c);
       const cacheKey = readOpenApiDocumentCacheKey(c);
       const now = Date.now();
       const cached = openApiDocumentCache.get(cacheKey);
 
       if (cached && now <= cached.expiresAt) {
-        setDocsCacheHeaders(c);
+        setDocsCacheHeaders(c, { requireAuth: requireDocsAuth });
         return c.json(cached.document, 200);
       }
 
@@ -153,14 +190,14 @@ export const registerDocsRoutes = (
           });
         }
 
-        setDocsCacheHeaders(c);
+        setDocsCacheHeaders(c, { requireAuth: requireDocsAuth });
         return c.json(cached.document, 200);
       }
 
       try {
         const document = await buildOpenApiDocument(c, app, dependencies);
         cacheOpenApiDocument(cacheKey, document);
-        setDocsCacheHeaders(c);
+        setDocsCacheHeaders(c, { requireAuth: requireDocsAuth });
         return c.json(document, 200);
       } catch {
         return internalError(c, "OpenAPI 문서를 생성하지 못했습니다.");
@@ -180,8 +217,15 @@ export const registerDocsRoutes = (
 
   for (const route of docsUiRoutes) {
     app.openapi(route, async (c): Promise<any> => {
+      const denied = await ensureDocsAccess(c, dependencies);
+      if (denied) {
+        return denied;
+      }
+
       try {
-        setDocsCacheHeaders(c);
+        setDocsCacheHeaders(c, {
+          requireAuth: dependencies.shouldRequireDocsAuth(c),
+        });
         return scalarReference(c, async () => {});
       } catch {
         return internalError(c, "OpenAPI 문서 UI를 렌더링하지 못했습니다.");

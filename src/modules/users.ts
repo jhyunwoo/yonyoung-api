@@ -36,6 +36,7 @@ import {
   ApiUserSchema,
   ApiMemberProfileUpdateSchema,
 } from "../lib/openapi/schemas";
+import type { Role } from "../lib/authorization/types";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -45,6 +46,26 @@ const updateUserRequestSchema = z
 
 const canReadAllUsers = (role: string): boolean =>
   role === "president" || role === "vice_president";
+
+const canManageTargetUser = (
+  actor: {
+    id: string;
+    role: Role;
+  },
+  targetUser: {
+    id: string;
+    role: string | null;
+  },
+): boolean => {
+  if (actor.id === targetUser.id) {
+    return true;
+  }
+
+  return (
+    canAssignRole(actor.role, targetUser.role) &&
+    normalizeRole(actor.role) !== normalizeRole(targetUser.role)
+  );
+};
 
 const listUsersRoute = createRoute({
   method: "get",
@@ -339,19 +360,19 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
       return badRequest(c, "일부 대상 사용자를 찾을 수 없습니다.");
     }
 
-    const normalizedNextRole = normalizeRole(body.data.role);
-    const actorIsPresident = normalizeRole(actorResult.actor.role) === "president";
-    const demotedOtherPresidentExists = targetUsers.some(
+    const unauthorizedTargetExists = targetUsers.some(
       (candidate) =>
         candidate !== null &&
-        candidate.id !== actorResult.actor.id &&
-        normalizeRole(candidate.role) === "president" &&
-        normalizedNextRole !== "president",
+        !canManageTargetUser(actorResult.actor, {
+          id: candidate.id,
+          role: candidate.role,
+        }),
     );
-    if (actorIsPresident && demotedOtherPresidentExists) {
-      return forbidden(c, "다른 회장의 권한은 변경할 수 없습니다.");
+    if (unauthorizedTargetExists) {
+      return forbidden(c, "본인보다 높거나 같은 등급의 사용자는 변경할 수 없습니다.");
     }
 
+    const normalizedNextRole = normalizeRole(body.data.role);
     const presidentCount = await dataService.countUsersByRole("president");
     const demotedPresidentCount = targetUsers.filter(
       (candidate) =>
@@ -411,6 +432,15 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
         return notFound(c);
       }
 
+      if (
+        !canManageTargetUser(actorResult.actor, {
+          id: currentUser.id,
+          role: currentUser.role,
+        })
+      ) {
+        return forbidden(c, "본인보다 높거나 같은 등급의 사용자는 변경할 수 없습니다.");
+      }
+
       const updateInput = { ...body.data };
       if (updateInput.role !== undefined) {
         if (!canAssignRole(actorResult.actor.role, updateInput.role)) {
@@ -423,16 +453,7 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
           currentNormalizedRole === "president" &&
           nextNormalizedRole !== "president"
         ) {
-          const users = await dataService.listUsers();
-          const presidentCount = users.filter(
-                        /**
-             * users.filter 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다.
-             * @param candidate 대상을 식별하기 위한 ID 값입니다.
-             * @returns 함수 실행 결과를 반환합니다.
-             * @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다.
-             */
-            (candidate) => normalizeRole(candidate.role) === "president",
-          ).length;
+          const presidentCount = await dataService.countUsersByRole("president");
           if (presidentCount <= 1) {
             return badRequest(c, "회장 권한은 최소 1명 이상 유지되어야 합니다.");
           }
@@ -506,6 +527,28 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
     }
 
     const dataService = dependencies.getDataService(c);
+    const targetUser = await dataService.getUserById(params.data.id);
+    if (!targetUser) {
+      return notFound(c);
+    }
+
+    if (
+      can(actorResult.actor.role, "user", "delete") &&
+      !canManageTargetUser(actorResult.actor, {
+        id: targetUser.id,
+        role: targetUser.role,
+      })
+    ) {
+      return forbidden(c, "본인보다 높거나 같은 등급의 사용자는 삭제할 수 없습니다.");
+    }
+
+    if (normalizeRole(targetUser.role) === "president") {
+      const presidentCount = await dataService.countUsersByRole("president");
+      if (presidentCount <= 1) {
+        return badRequest(c, "회장 권한은 최소 1명 이상 유지되어야 합니다.");
+      }
+    }
+
     const deleted = await dataService.deleteUser(params.data.id);
     if (!deleted) {
       return notFound(c);

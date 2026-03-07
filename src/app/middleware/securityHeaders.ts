@@ -34,7 +34,7 @@ const resolveCspHeader = (pathname: string) => {
 
 const isCspReportOnlyEnabled = (value: string | undefined): boolean => {
   if (!value) {
-    return true;
+    return false;
   }
 
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());

@@ -583,7 +583,7 @@ describe("RBAC routes", /** describe 실행 과정에서 필요한 연산을 수
       actor: createActor("president", IDs.president),
       dataService: createDataServiceMock({
         getUserById: vi.fn(/** vi.fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createUser(IDs.president, "president")),
-        listUsers: vi.fn(/** vi.fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => [createUser(IDs.president, "president")]),
+        countUsersByRole: vi.fn(async () => 1),
         updateUser,
       }),
     });
@@ -607,6 +607,7 @@ describe("RBAC routes", /** describe 실행 과정에서 필요한 연산을 수
     const app = createTestApp({
       actor: createActor("regular_member", IDs.member),
       dataService: createDataServiceMock({
+        getUserById: vi.fn(async () => createUser(IDs.member, "regular_member")),
         deleteUser,
       }),
     });
