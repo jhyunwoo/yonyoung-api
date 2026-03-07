@@ -9,13 +9,13 @@
   "compatibility_date": "2025-09-27",
   "assets": {
     "binding": "ASSETS",
-    "directory": "./public",
+    "directory": "./public"
   },
   "observability": {
-    "enabled": true,
+    "enabled": true
   },
   "placement": {
-    "mode": "smart",
+    "mode": "smart"
   },
   "compatibility_flags": [
     "nodejs_compat"
@@ -24,8 +24,8 @@
     {
       "bucket_name": "yonyoung-storage",
       "binding": "r2",
-      "remote": false,
-    },
+      "remote": false
+    }
   ],
   "d1_databases": [
     {
@@ -33,18 +33,18 @@
       "database_name": "yonyoung-db",
       "database_id": "2b8373ca-0dd5-486f-aa2f-4847e5e2b79a",
       "migrations_dir": "drizzle",
-      "remote": false,
-    },
+      "remote": false
+    }
   ],
   "analytics_engine_datasets": [
     {
       "binding": "PERF_ANALYTICS",
-      "dataset": "yonyoung_api_perf",
-    },
+      "dataset": "yonyoung_api_perf"
+    }
   ],
   "vars": {
     "BETTER_AUTH_URL": "https://yonyoung.yonsei.ac.kr",
-    "BETTER_AUTH_TRUSTED_ORIGINS": "https://yonyoung.yonsei.ac.kr,https://yonyoung.moveto.kr,https://dev.yonyoung.moveto.kr",
+    "BETTER_AUTH_TRUSTED_ORIGINS": "https://yonyoung.yonsei.ac.kr,https://dev.yonyoung.moveto.kr",
     "R2_PUBLIC_BASE_URL": "https://storage.yonyoung.moveto.kr",
     "R2_BUCKET": "yonyoung-storage",
     "VAPID_PUBLIC_KEY": "E0QyEop1GC5FZG7Waq6W3lh23kKZatbFPDNYaTahJjo",
@@ -57,13 +57,13 @@
     "D1_WRITE_RETRY_BASE_DELAY_MS": "25",
     "D1_WRITE_RETRY_MAX_DELAY_MS": "500",
     "PERF_ANALYTICS_ENABLED": "false",
-    "PERF_ANALYTICS_SAMPLE_RATE": "0.2",
+    "PERF_ANALYTICS_SAMPLE_RATE": "0.2"
   },
   "env": {
     "dev": {
       "vars": {
         "BETTER_AUTH_URL": "https://yonyoung.yonsei.ac.kr",
-        "BETTER_AUTH_TRUSTED_ORIGINS": "https://yonyoung.yonsei.ac.kr,https://yonyoung.moveto.kr,https://dev.yonyoung.moveto.kr",
+        "BETTER_AUTH_TRUSTED_ORIGINS": "https://yonyoung.yonsei.ac.kr,https://dev.yonyoung.moveto.kr",
         "R2_PUBLIC_BASE_URL": "https://storage.yonyoung.moveto.kr",
         "R2_BUCKET": "yonyoung-storage",
         "VAPID_PUBLIC_KEY": "E0QyEop1GC5FZG7Waq6W3lh23kKZatbFPDNYaTahJjo",
@@ -76,14 +76,14 @@
         "D1_WRITE_RETRY_BASE_DELAY_MS": "25",
         "D1_WRITE_RETRY_MAX_DELAY_MS": "500",
         "PERF_ANALYTICS_ENABLED": "false",
-        "PERF_ANALYTICS_SAMPLE_RATE": "0.2",
+        "PERF_ANALYTICS_SAMPLE_RATE": "0.2"
       },
       "r2_buckets": [
         {
           "bucket_name": "yonyoung-storage",
           "binding": "r2",
-          "remote": false,
-        },
+          "remote": false
+        }
       ],
       "d1_databases": [
         {
@@ -97,11 +97,11 @@
       "analytics_engine_datasets": [
         {
           "binding": "PERF_ANALYTICS",
-          "dataset": "yonyoung_api_perf",
-        },
-      ],
-    },
-  },
+          "dataset": "yonyoung_api_perf"
+        }
+      ]
+    }
+  }
   /**
    * Smart Placement
    * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

@@ -340,6 +340,7 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
       expect(response.status).toBe(500);
       const body = await readJson<{ error: { message: string } }>(response);
       expect(body.error.message).toContain("R2_*");
+      expect(body.error.message).toContain("공개 URL 서명");
       expect(consoleSpy).not.toHaveBeenCalled();
     } finally {
       console.error = originalConsoleError;

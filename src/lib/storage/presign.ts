@@ -58,6 +58,7 @@ type StorageEnv = {
 const PRESIGNED_URL_EXPIRES_IN_SECONDS = 3600;
 const PUBLIC_MEDIA_ROUTE_PREFIX = "/api/public/media";
 const PUBLIC_URL_SIGNING_SECRET_ENV_KEY = "R2_PUBLIC_URL_SIGNING_SECRET";
+const LEGACY_PUBLIC_URL_SIGNING_SECRET_ENV_KEY = "BETTER_AUTH_SECRET";
 const SAFE_OBJECT_SEGMENT_PATTERN = /^[A-Za-z0-9._-]{1,160}$/;
 const SAFE_ACTOR_ID_PATTERN = /^[A-Za-z0-9_-]{1,120}$/;
 const SLOT_ALLOWLIST_BY_PATH: Record<ManagedUploadResourcePath, readonly ManagedUploadSlot[]> = {
@@ -123,7 +124,13 @@ const readRuntimeValue = (env: AppBindings, key: keyof AppBindings): string | un
 export const resolvePublicObjectSigningSecret = (
   env: AppBindings,
 ): string | undefined => {
-  return readRuntimeValue(env, PUBLIC_URL_SIGNING_SECRET_ENV_KEY as keyof AppBindings);
+  return (
+    readRuntimeValue(env, PUBLIC_URL_SIGNING_SECRET_ENV_KEY as keyof AppBindings) ??
+    readRuntimeValue(
+      env,
+      LEGACY_PUBLIC_URL_SIGNING_SECRET_ENV_KEY as keyof AppBindings,
+    )
+  );
 };
 
 const sanitizeFileName = (fileName: string): string => {
@@ -223,7 +230,9 @@ const resolveStorageEnv = (env: AppBindings): StorageEnv => {
     missingKeys.push("BETTER_AUTH_URL");
   }
   if (!publicUrlSigningSecret) {
-    missingKeys.push(PUBLIC_URL_SIGNING_SECRET_ENV_KEY);
+    missingKeys.push(
+      `${PUBLIC_URL_SIGNING_SECRET_ENV_KEY} or ${LEGACY_PUBLIC_URL_SIGNING_SECRET_ENV_KEY}`,
+    );
   }
 
   if (missingKeys.length > 0) {
