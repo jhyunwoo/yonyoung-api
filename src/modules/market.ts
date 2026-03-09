@@ -8,6 +8,10 @@ import { recordAuditLog, readChangedFields, withUpdatedByActor } from "../lib/au
 import { runNonCriticalTask } from "../lib/http/non-critical";
 import { sendMarketPushNotifications } from "../lib/notifications/market-push";
 import {
+  hasMeaningfulRichTextHtml,
+  sanitizeRichTextHtml,
+} from "../lib/content/rich-text";
+import {
   createdResponse,
   dataResponse,
   errorResponses,
@@ -63,6 +67,21 @@ const ensurePatchPayloadNotEmpty = (
     return message;
   }
   return null;
+};
+
+const normalizeMarketDescription = (
+  description: string | null | undefined,
+): string | null | undefined => {
+  if (description === undefined) {
+    return undefined;
+  }
+
+  if (description === null) {
+    return null;
+  }
+
+  const sanitized = sanitizeRichTextHtml(description);
+  return hasMeaningfulRichTextHtml(sanitized) ? sanitized : null;
 };
 
 const listMarketItemsRoute = createRoute({
@@ -319,6 +338,7 @@ export const registerMarketRoutes = (app: App, dependencies: AppDependencies) =>
       return badRequest(c, body.message);
     }
 
+    const normalizedDescription = normalizeMarketDescription(body.data.description);
     const dataService = dependencies.getDataService(c);
     const data = await dataService.createMarketItem({
       sellerId: actorResult.actor.id,
@@ -327,7 +347,7 @@ export const registerMarketRoutes = (app: App, dependencies: AppDependencies) =>
       manufacturer: body.data.manufacturer ?? null,
       productCode: body.data.productCode ?? null,
       conditionGrade: body.data.conditionGrade ?? null,
-      description: body.data.description ?? null,
+      description: normalizedDescription ?? null,
       price: body.data.price,
     });
 
@@ -410,6 +430,13 @@ export const registerMarketRoutes = (app: App, dependencies: AppDependencies) =>
       return badRequest(c, payloadErrorMessage);
     }
 
+    const nextBody = {
+      ...body.data,
+      ...(body.data.description !== undefined
+        ? { description: normalizeMarketDescription(body.data.description) }
+        : {}),
+    };
+
     const dataService = dependencies.getDataService(c);
     const existing = await dataService.getMarketItemById(params.data.id);
     if (!existing) {
@@ -426,7 +453,7 @@ export const registerMarketRoutes = (app: App, dependencies: AppDependencies) =>
       return forbidden(c, "작성자 또는 운영진만 게시물을 수정할 수 있습니다.");
     }
 
-    const data = await dataService.updateMarketItem(params.data.id, body.data);
+    const data = await dataService.updateMarketItem(params.data.id, nextBody);
     if (!data) {
       return notFound(c);
     }
@@ -438,7 +465,7 @@ export const registerMarketRoutes = (app: App, dependencies: AppDependencies) =>
         resourceType: "market_item",
         resourceId: data.id,
         action: "update",
-        changedFields: readChangedFields(body.data, ["updatedAt"]),
+        changedFields: readChangedFields(nextBody, ["updatedAt"]),
       }),
     );
 
