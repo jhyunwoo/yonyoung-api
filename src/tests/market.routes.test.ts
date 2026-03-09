@@ -170,6 +170,58 @@ describe("market routes", () => {
     );
   });
 
+  it("판매글 생성 시 설명 리치텍스트를 sanitize해서 저장한다", async () => {
+    const createMarketItemMock = fn(async () => createMarketItem());
+    const app = createTestApp({
+      actor: createActor("regular_member", IDs.member),
+      dataService: createDataServiceMock({
+        createMarketItem: createMarketItemMock,
+      }),
+    });
+
+    const response = await app.request("/api/market/items", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Nikon FM2",
+        imageUrls: ["https://cdn.example.com/market/item-2.jpg"],
+        description: '<script>alert("xss")</script><p>상태 <strong>양호</strong></p>',
+        price: 450000,
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(createMarketItemMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: "<p>상태 <strong>양호</strong></p>",
+      }),
+    );
+  });
+
+  it("판매글 수정 시 비어 있는 리치텍스트 설명을 null로 정규화한다", async () => {
+    const updateMarketItemMock = fn(async () => createMarketItem({ description: null }));
+    const app = createTestApp({
+      actor: createActor("regular_member", IDs.member),
+      dataService: createDataServiceMock({
+        getMarketItemById: fn(async () => createMarketItem({ sellerId: IDs.member })),
+        updateMarketItem: updateMarketItemMock,
+      }),
+    });
+
+    const response = await app.request(`/api/market/items/${MARKET_ITEM_ID}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        description: "<p><br></p>",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(updateMarketItemMock).toHaveBeenCalledWith(MARKET_ITEM_ID, {
+      description: null,
+    });
+  });
+
   it("작성자가 아닌 regular_member는 판매 상태를 변경할 수 없다", async () => {
     const updateMarketItemStatus = fn(async () => createMarketItem({ status: "reserved" }));
     const app = createTestApp({

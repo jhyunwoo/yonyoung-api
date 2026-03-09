@@ -1000,8 +1000,8 @@ export const ApiMarketItemSchema = z
       example: "A",
     }),
     description: z.string().nullable().openapi({
-      description: "판매 설명",
-      example: "실사용 3개월, 박스/보증서 포함",
+      description: "판매 설명 리치텍스트 HTML",
+      example: "<p>실사용 3개월, 박스/보증서 포함</p>",
     }),
     price: z.number().int().nonnegative().openapi({
       description: "판매 가격(원 단위 정수)",
@@ -1048,7 +1048,10 @@ export const ApiCreateMarketItemSchema = z
       description: "제품 상태 등급",
       example: "A",
     }),
-    description: nullableTrimmedStringField("판매 설명", "실사용 3개월, 박스/보증서 포함").optional(),
+    description: nullableTrimmedStringField(
+      "판매 설명 리치텍스트 HTML",
+      "<p>실사용 3개월, 박스/보증서 포함</p>",
+    ).optional(),
     price: z.number().int().nonnegative("가격은 0 이상이어야 합니다.").openapi({
       description: "판매 가격(원 단위 정수)",
       example: 2200000,
@@ -1076,7 +1079,10 @@ export const ApiUpdateMarketItemSchema = z
       description: "제품 상태 등급",
       example: "B",
     }),
-    description: nullableTrimmedStringField("판매 설명", "생활기스 있음").optional(),
+    description: nullableTrimmedStringField(
+      "판매 설명 리치텍스트 HTML",
+      "<p>생활기스 있음</p>",
+    ).optional(),
     price: z.number().int().nonnegative("가격은 0 이상이어야 합니다.").optional().openapi({
       description: "판매 가격(원 단위 정수)",
       example: 1990000,
