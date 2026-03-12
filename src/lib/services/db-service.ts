@@ -3503,7 +3503,38 @@ export const createDbDataService = (database: D1Database): DataService => {
 		 * @remarks 감사 로그(actorId) 기반으로 사용자의 리소스 생성/수정/삭제 이력을 반환합니다.
 		 */
 		async listUserResourceHistory(input) {
-			const safeLimit = Math.max(1, Math.min(100, Math.floor(input.limit)));
+			const safePage =
+				typeof input.page === "number" &&
+				Number.isFinite(input.page) &&
+				input.page > 0
+					? Math.floor(input.page)
+					: 1;
+			const safePageSize =
+				typeof input.pageSize === "number" &&
+				Number.isFinite(input.pageSize) &&
+				input.pageSize > 0
+					? Math.min(100, Math.floor(input.pageSize))
+					: 10;
+			const conditions = [
+				eq(auditLogs.actorId, input.userId),
+				inArray(auditLogs.resourceType, [
+					...USER_RESOURCE_HISTORY_RESOURCE_TYPES,
+				]),
+			];
+
+			if (input.action) {
+				conditions.push(eq(auditLogs.action, input.action));
+			}
+
+			const totalRows = await db
+				.select({
+					value: sql<number>`count(*)`,
+				})
+				.from(auditLogs)
+				.where(and(...conditions));
+			const total = totalRows[0]?.value ?? 0;
+			const totalPages =
+				total === 0 ? 0 : Math.ceil(total / safePageSize);
 			const historyRows = await db
 				.select({
 					id: auditLogs.id,
@@ -3514,19 +3545,19 @@ export const createDbDataService = (database: D1Database): DataService => {
 					createdAt: auditLogs.createdAt,
 				})
 				.from(auditLogs)
-				.where(
-					and(
-						eq(auditLogs.actorId, input.userId),
-						inArray(auditLogs.resourceType, [
-							...USER_RESOURCE_HISTORY_RESOURCE_TYPES,
-						]),
-					),
-				)
+				.where(and(...conditions))
 				.orderBy(desc(auditLogs.createdAt))
-				.limit(safeLimit);
+				.limit(safePageSize)
+				.offset((safePage - 1) * safePageSize);
 
 			if (historyRows.length === 0) {
-				return { items: [] };
+				return {
+					items: [],
+					page: safePage,
+					pageSize: safePageSize,
+					total,
+					totalPages,
+				};
 			}
 
 			const resourceIdsByType: Record<
@@ -3730,7 +3761,13 @@ export const createDbDataService = (database: D1Database): DataService => {
 				});
 			}
 
-			return { items };
+			return {
+				items,
+				page: safePage,
+				pageSize: safePageSize,
+				total,
+				totalPages,
+			};
 		},
 		/**
 		 * updateUser 기존 데이터나 상태를 갱신하는 처리를 수행합니다.

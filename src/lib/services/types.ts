@@ -255,6 +255,10 @@ export type UserResourceHistoryItemEntity = {
 
 export type UserResourceHistoryEntity = {
   items: UserResourceHistoryItemEntity[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 };
 
 export type AdminDashboardStatsEntity = {
@@ -559,7 +563,9 @@ export type DataService = {
   getUserById: (id: string) => Promise<UserEntity | null>;
   listUserResourceHistory: (input: {
     userId: string;
-    limit: number;
+    page: number;
+    pageSize: number;
+    action?: AuditAction;
   }) => Promise<UserResourceHistoryEntity>;
   updateUser: (
     id: string,

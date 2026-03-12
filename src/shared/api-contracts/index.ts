@@ -432,6 +432,10 @@ export type ApiUserResourceHistoryItem = {
 
 export type ApiUserResourceHistory = {
   items: ApiUserResourceHistoryItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 };
 
 export type ApiPublicGenerationMember = {

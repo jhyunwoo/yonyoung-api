@@ -767,8 +767,14 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     expect(listUsersByIds).toHaveBeenCalledWith([IDs.president]);
   });
 
-  it("resource-history 조회는 부회장에게 허용되며 기본 limit=100을 사용한다", async () => {
-    const listUserResourceHistory = fn(async () => ({ items: [] }));
+  it("resource-history 조회는 부회장에게 허용되며 기본 page/pageSize를 사용한다", async () => {
+    const listUserResourceHistory = fn(async () => ({
+      items: [],
+      page: 1,
+      pageSize: 10,
+      total: 0,
+      totalPages: 0,
+    }));
     const app = createTestApp({
       actor: createActor("vice_president", IDs.vicePresident),
       dataService: createDataServiceMock({
@@ -780,16 +786,38 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     const response = await app.request(`/api/users/${IDs.member}/resource-history`);
 
     expect(response.status).toBe(200);
-    const body = await readJson<{ data: { items: unknown[] } }>(response);
-    expect(body.data.items).toEqual([]);
+    const body = await readJson<{
+      data: {
+        items: unknown[];
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+      };
+    }>(response);
+    expect(body.data).toEqual({
+      items: [],
+      page: 1,
+      pageSize: 10,
+      total: 0,
+      totalPages: 0,
+    });
     expect(listUserResourceHistory).toHaveBeenCalledWith({
       userId: IDs.member,
-      limit: 100,
+      page: 1,
+      pageSize: 10,
+      action: undefined,
     });
   });
 
-  it("resource-history 조회는 회장에게 허용되며 limit 쿼리를 반영한다", async () => {
-    const listUserResourceHistory = fn(async () => ({ items: [] }));
+  it("resource-history 조회는 회장에게 허용되며 page/pageSize/action 쿼리를 반영한다", async () => {
+    const listUserResourceHistory = fn(async () => ({
+      items: [],
+      page: 2,
+      pageSize: 15,
+      total: 24,
+      totalPages: 2,
+    }));
     const app = createTestApp({
       actor: createActor("president", IDs.president),
       dataService: createDataServiceMock({
@@ -798,17 +826,27 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
       }),
     });
 
-    const response = await app.request(`/api/users/${IDs.member}/resource-history?limit=15`);
+    const response = await app.request(
+      `/api/users/${IDs.member}/resource-history?page=2&pageSize=15&action=create`,
+    );
 
     expect(response.status).toBe(200);
     expect(listUserResourceHistory).toHaveBeenCalledWith({
       userId: IDs.member,
-      limit: 15,
+      page: 2,
+      pageSize: 15,
+      action: "create",
     });
   });
 
   it("resource-history 조회에서 manager는 403을 반환한다", async () => {
-    const listUserResourceHistory = fn(async () => ({ items: [] }));
+    const listUserResourceHistory = fn(async () => ({
+      items: [],
+      page: 1,
+      pageSize: 10,
+      total: 0,
+      totalPages: 0,
+    }));
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({
@@ -835,7 +873,13 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
   });
 
   it("resource-history 조회에서 대상 사용자가 없으면 404를 반환한다", async () => {
-    const listUserResourceHistory = fn(async () => ({ items: [] }));
+    const listUserResourceHistory = fn(async () => ({
+      items: [],
+      page: 1,
+      pageSize: 10,
+      total: 0,
+      totalPages: 0,
+    }));
     const app = createTestApp({
       actor: createActor("vice_president", IDs.vicePresident),
       dataService: createDataServiceMock({
@@ -851,7 +895,7 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     expect(listUserResourceHistory).not.toHaveBeenCalled();
   });
 
-  it("resource-history 조회에서 limit가 범위를 벗어나면 400을 반환한다", async () => {
+  it("resource-history 조회에서 pageSize가 범위를 벗어나면 400을 반환한다", async () => {
     const app = createTestApp({
       actor: createActor("vice_president", IDs.vicePresident),
       dataService: createDataServiceMock({
@@ -859,7 +903,9 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
       }),
     });
 
-    const response = await app.request(`/api/users/${IDs.member}/resource-history?limit=101`);
+    const response = await app.request(
+      `/api/users/${IDs.member}/resource-history?pageSize=101`,
+    );
 
     expect(response.status).toBe(400);
     await expectErrorCode(response, "BAD_REQUEST");
