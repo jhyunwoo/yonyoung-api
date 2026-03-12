@@ -667,7 +667,9 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
       "특정 사용자의 리소스 생성/수정/삭제 이력을 조회합니다. 감사 로그(actorId)와 리소스 메타 정보를 조합해 화면 표시용 데이터를 제공합니다.",
     parameters: [
       "`id` (path): 조회 대상 사용자 식별자(better-auth user.id)",
-      "`limit` (query, optional): 조회 최대 건수(기본 100, 최소 1, 최대 100)",
+      "`page` (query, optional): 조회할 페이지 번호(기본 1)",
+      "`pageSize` (query, optional): 페이지당 조회 건수(기본 10, 최소 1, 최대 100)",
+      "`action` (query, optional): create/update/delete 중 특정 액션만 조회",
     ],
     requestBody: ["요청 본문은 사용하지 않습니다."],
     internalFlow: [
@@ -676,11 +678,11 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
       "audit_logs(actorId) 기준으로 대상 리소스 타입의 이력을 최신순 조회하고 리소스 메타를 병합해 반환합니다.",
     ],
     responseGuide: [
-      "`200`: `{ items: ApiUserResourceHistoryItem[] }` 반환",
+      "`200`: `{ items: ApiUserResourceHistoryItem[], page, pageSize, total, totalPages }` 반환",
       "`items`에는 리소스 타입/제목/액션/삭제 여부/연결용 보조 ID(generationId/linktreeId)가 포함됩니다.",
     ],
     errorGuide: [
-      "`400`: 사용자 ID 형식 또는 limit 쿼리 검증 실패",
+      "`400`: 사용자 ID 형식 또는 page/pageSize/action 쿼리 검증 실패",
       "`401`: 인증 없음",
       "`403`: 회장/부회장이 아닌 역할",
       "`404`: 대상 사용자 없음",

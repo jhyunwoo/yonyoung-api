@@ -327,7 +327,9 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
 
     const history = await dataService.listUserResourceHistory({
       userId: params.data.id,
-      limit: query.data.limit,
+      page: query.data.page,
+      pageSize: query.data.pageSize,
+      action: query.data.action,
     });
     return ok(c, history);
   });

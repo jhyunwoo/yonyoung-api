@@ -1575,14 +1575,38 @@ export const ApiUserResourceHistorySchema = z
     items: z.array(ApiUserResourceHistoryItemSchema).openapi({
       description: "사용자 리소스 이력 배열(최신순)",
     }),
+    page: z.number().int().min(1).openapi({
+      description: "현재 페이지 번호(1부터 시작)",
+      example: 1,
+    }),
+    pageSize: z.number().int().min(1).openapi({
+      description: "페이지당 이력 수",
+      example: 10,
+    }),
+    total: z.number().int().min(0).openapi({
+      description: "조건에 맞는 전체 이력 수",
+      example: 24,
+    }),
+    totalPages: z.number().int().min(0).openapi({
+      description: "전체 페이지 수",
+      example: 3,
+    }),
   })
   .openapi("ApiUserResourceHistory");
 
 export const ApiUserResourceHistoryQuerySchema = z
   .object({
-    limit: z.coerce.number().int().min(1).max(100).default(100).openapi({
-      description: "조회할 최대 이력 수(기본 100, 최대 100)",
-      example: 100,
+    page: z.coerce.number().int().min(1).default(1).openapi({
+      description: "조회할 페이지 번호(기본 1)",
+      example: 1,
+    }),
+    pageSize: z.coerce.number().int().min(1).max(100).default(10).openapi({
+      description: "페이지당 조회할 최대 이력 수(기본 10, 최대 100)",
+      example: 10,
+    }),
+    action: z.enum(["create", "update", "delete"]).optional().openapi({
+      description: "특정 액션만 필터링할 때 사용",
+      example: "create",
     }),
   })
   .openapi("ApiUserResourceHistoryQuery");

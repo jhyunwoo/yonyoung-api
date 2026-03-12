@@ -314,7 +314,13 @@ export const createDataServiceMock = (
     listUsersByIds: async () => [],
     listUsersByGenerationIds: async () => [],
     countUsersByRole: async () => 0,
-    listUserResourceHistory: async () => ({ items: [] }),
+    listUserResourceHistory: async () => ({
+      items: [],
+      page: 1,
+      pageSize: 10,
+      total: 0,
+      totalPages: 0,
+    }),
   };
 
   const merged = { ...base, ...overrides } as DataService;
