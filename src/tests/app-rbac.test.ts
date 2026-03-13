@@ -620,7 +620,7 @@ describe("RBAC routes", /** describe 실행 과정에서 필요한 연산을 수
     expect(deleteUser).toHaveBeenCalledWith(IDs.member);
   });
 
-  it("부원은 activities 생성이 가능하다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("부원은 activities 생성이 불가하다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
     const createActivity = vi.fn(async () => ({
       id: IDs.exhibition,
       title: "t",
@@ -656,8 +656,8 @@ describe("RBAC routes", /** describe 실행 과정에서 필요한 연산을 수
       }),
     });
 
-    expect(response.status).toBe(201);
-    expect(createActivity).toHaveBeenCalled();
+    expect(response.status).toBe(403);
+    expect(createActivity).not.toHaveBeenCalled();
   });
 
   it("부장은 사용자 프로필 presign 발급이 불가하다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
