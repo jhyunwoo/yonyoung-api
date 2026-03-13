@@ -137,32 +137,29 @@ describe("activity routes", /** describe 실행 과정에서 필요한 연산을
     await expectErrorCode(emptyDescriptionResponse, "BAD_REQUEST");
   });
 
-  it("member 계열 사용자는 활동 생성이 가능하다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("member 계열 사용자는 활동 생성이 불가하다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
     const createActivityMock = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createActivity({ title: "부원 생성 활동" }));
     const app = createTestApp({
       actor: createActor("regular_member"),
       dataService: createDataServiceMock({ createActivity: createActivityMock }),
     });
 
-    const payload = {
-      title: "부원 생성 활동",
-      description: "설명",
-      startDate: Date.parse("2030-03-01T00:00:00.000Z"),
-      endDate: Date.parse("2030-03-03T00:00:00.000Z"),
-      coverImageUrl: "https://example.com/cover.jpg",
-      generationId: IDs.generation,
-    };
-
     const response = await app.request("/api/activities", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        title: "부원 생성 활동",
+        description: "설명",
+        startDate: Date.parse("2030-03-01T00:00:00.000Z"),
+        endDate: Date.parse("2030-03-03T00:00:00.000Z"),
+        coverImageUrl: "https://example.com/cover.jpg",
+        generationId: IDs.generation,
+      }),
     });
 
-    expect(response.status).toBe(201);
-    const body = await readJson<{ data: { title: string } }>(response);
-    expect(body.data.title).toBe("부원 생성 활동");
-    expect(createActivityMock).toHaveBeenCalledWith(payload);
+    expect(response.status).toBe(403);
+    await expectErrorCode(response, "FORBIDDEN");
+    expect(createActivityMock).not.toHaveBeenCalled();
   });
 
   it("활동 생성 본문이 잘못되면 400을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
@@ -435,28 +432,25 @@ describe("activity routes", /** describe 실행 과정에서 필요한 연산을
     expect(deleteActivity).toHaveBeenCalledWith(IDs.activity);
   });
 
-  it("member 계열 사용자는 활동 상세 이미지를 추가할 수 있다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("member 계열 사용자는 활동 상세 이미지를 추가할 수 없다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
     const addActivityImage = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createActivityImage());
     const app = createTestApp({
       actor: createActor("regular_member"),
       dataService: createDataServiceMock({ addActivityImage }),
     });
 
-    const payload = {
-      imageUrl: "https://example.com/detail.jpg",
-      sortOrder: 0,
-    };
-
     const response = await app.request(`/api/activities/${IDs.activity}/images`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        imageUrl: "https://example.com/detail.jpg",
+        sortOrder: 0,
+      }),
     });
 
-    expect(response.status).toBe(201);
-    const body = await readJson<{ data: { id: string } }>(response);
-    expect(body.data.id).toBe(IDs.activityImage);
-    expect(addActivityImage).toHaveBeenCalledWith(IDs.activity, payload);
+    expect(response.status).toBe(403);
+    await expectErrorCode(response, "FORBIDDEN");
+    expect(addActivityImage).not.toHaveBeenCalled();
   });
 
   it("활동 상세 이미지 추가 본문이 유효하지 않으면 400을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
@@ -835,24 +829,22 @@ describe("activity routes", /** describe 실행 과정에서 필요한 연산을
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("member 계열 사용자는 활동 수정이 가능하다", async () => {
+  it("member 계열 사용자는 활동 수정이 불가하다", async () => {
     const updateActivity = fn(async () => createActivity({ title: "부원 수정" }));
     const app = createTestApp({
       actor: createActor("regular_member"),
       dataService: createDataServiceMock({ updateActivity }),
     });
 
-    const payload = { title: "부원 수정" };
     const response = await app.request(`/api/activities/${IDs.activity}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ title: "부원 수정" }),
     });
 
-    expect(response.status).toBe(200);
-    const body = await readJson<{ data: { title: string } }>(response);
-    expect(body.data.title).toBe("부원 수정");
-    expect(updateActivity).toHaveBeenCalledWith(IDs.activity, payload);
+    expect(response.status).toBe(403);
+    await expectErrorCode(response, "FORBIDDEN");
+    expect(updateActivity).not.toHaveBeenCalled();
   });
 
   it("활동 상세 이미지 생성/수정/삭제 파라미터가 유효하지 않으면 400을 반환한다", async () => {
@@ -906,31 +898,25 @@ describe("activity routes", /** describe 실행 과정에서 필요한 연산을
     await expectErrorCode(batchUpdateResponse, "BAD_REQUEST");
   });
 
-  it("member 계열 사용자는 활동 상세 이미지 수정이 가능하다", async () => {
+  it("member 계열 사용자는 활동 상세 이미지를 수정할 수 없다", async () => {
     const updateActivityImage = fn(async () => createActivityImage({ sortOrder: 2 }));
     const app = createTestApp({
       actor: createActor("regular_member"),
       dataService: createDataServiceMock({ updateActivityImage }),
     });
 
-    const payload = { sortOrder: 2 };
     const response = await app.request(
       `/api/activities/${IDs.activity}/images/${IDs.activityImage}`,
       {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ sortOrder: 2 }),
       },
     );
 
-    expect(response.status).toBe(200);
-    const body = await readJson<{ data: { sortOrder: number } }>(response);
-    expect(body.data.sortOrder).toBe(2);
-    expect(updateActivityImage).toHaveBeenCalledWith(
-      IDs.activity,
-      IDs.activityImage,
-      payload,
-    );
+    expect(response.status).toBe(403);
+    await expectErrorCode(response, "FORBIDDEN");
+    expect(updateActivityImage).not.toHaveBeenCalled();
   });
 
   it("활동/활동 이미지 수정 본문이 스키마와 맞지 않으면 400을 반환한다", async () => {

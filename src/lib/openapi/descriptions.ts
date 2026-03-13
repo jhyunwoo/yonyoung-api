@@ -236,7 +236,7 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
     errorGuide: [...commonErrorGuide],
     permission: [
       "`activity:create` 권한이 필요합니다.",
-      "미승인(unverified)을 제외한 모든 역할이 생성할 수 있습니다.",
+      "회장/부회장/부장만 생성할 수 있습니다.",
     ],
   }),
   getActivityById: mkSpec({
@@ -273,7 +273,7 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
     errorGuide: [...commonErrorGuide],
     permission: [
       "`activity:update` 권한 필요",
-      "미승인(unverified)을 제외한 모든 역할이 수정할 수 있습니다.",
+      "회장/부회장/부장만 수정할 수 있습니다.",
     ],
   }),
   deleteActivity: mkSpec({
@@ -288,7 +288,7 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
     ],
     responseGuide: ["`204`: 본문 없이 삭제 완료"],
     errorGuide: [...readOnlyErrorGuide],
-    permission: ["`activity:delete` 권한 필요"],
+    permission: ["`activity:delete` 권한 필요(회장/부회장/부장만 삭제 가능)"],
   }),
   addActivityImage: mkSpec({
     summary: "활동 세부 이미지 추가",
@@ -306,9 +306,7 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
     ],
     responseGuide: ["`201`: 생성된 `ApiActivityImage` 반환"],
     errorGuide: [...commonErrorGuide],
-    permission: [
-      "세부 이미지 추가/수정은 활동 업데이트 권한(`activity:update`)으로 통합 관리합니다.",
-    ],
+    permission: ["회장/부회장/부장만 활동 세부 이미지를 추가/수정할 수 있습니다."],
   }),
   updateActivityImage: mkSpec({
     summary: "활동 세부 이미지 수정",
@@ -329,7 +327,7 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
     ],
     responseGuide: ["`200`: 수정된 `ApiActivityImage` 반환"],
     errorGuide: [...commonErrorGuide],
-    permission: ["`activity:update` 권한 필요"],
+    permission: ["`activity:update` 권한 필요(회장/부회장/부장만 수정 가능)"],
   }),
   deleteActivityImage: mkSpec({
     summary: "활동 세부 이미지 삭제",
@@ -346,7 +344,7 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
     ],
     responseGuide: ["`204`: 본문 없이 삭제 완료"],
     errorGuide: [...readOnlyErrorGuide],
-    permission: ["`activity:delete` 권한 필요"],
+    permission: ["`activity:delete` 권한 필요(회장/부회장/부장만 삭제 가능)"],
   }),
   listExhibitions: mkSpec({
     summary: "전시 목록 조회",
@@ -789,7 +787,7 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
       "클라이언트는 `uploadUrl`로 PUT 업로드 후 `publicUrl`을 본문 API에 저장합니다.",
     ],
     errorGuide: [...commonErrorGuide],
-    permission: ["미승인(unverified)을 제외한 활동 생성/수정 권한 역할만 발급 가능"],
+    permission: ["회장/부회장/부장처럼 활동 생성/수정 권한이 있는 역할만 발급 가능합니다."],
   }),
   issueActivityDetailPresign: mkSpec({
     summary: "활동 세부 이미지 업로드 URL 발급",
@@ -804,7 +802,7 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
     ],
     responseGuide: ["`201`: presign 발급 정보 반환"],
     errorGuide: [...commonErrorGuide],
-    permission: ["미승인(unverified)을 제외한 활동 생성/수정 권한 필요"],
+    permission: ["회장/부회장/부장처럼 활동 생성/수정 권한이 있는 역할만 발급 가능합니다."],
   }),
   issueExhibitionCoverPresign: mkSpec({
     summary: "전시 대표 이미지 업로드 URL 발급",

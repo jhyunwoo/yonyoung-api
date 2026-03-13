@@ -45,12 +45,12 @@ describe("authorization policy", /** describe 실행 과정에서 필요한 연�
 
   it("member 계열 role은 동일 권한을 가진다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => {
     expect(can("new_member", "activity", "read")).toBe(true);
-    expect(can("new_member", "activity", "create")).toBe(true);
-    expect(can("new_member", "activity", "update")).toBe(true);
-    expect(can("associate_member", "activity", "create")).toBe(true);
+    expect(can("new_member", "activity", "create")).toBe(false);
+    expect(can("new_member", "activity", "update")).toBe(false);
+    expect(can("associate_member", "activity", "create")).toBe(false);
     expect(can("associate_member", "notice", "create")).toBe(false);
     expect(can("regular_member", "notice", "read")).toBe(true);
-    expect(can("regular_member", "activity", "update")).toBe(true);
+    expect(can("regular_member", "activity", "update")).toBe(false);
     expect(can("regular_member", "user", "read")).toBe(false);
     expect(can("regular_member", "market", "create")).toBe(true);
     expect(can("regular_member", "market", "delete")).toBe(true);
