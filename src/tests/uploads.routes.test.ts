@@ -282,7 +282,7 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
     "/api/activities/presign/detail",
     "/api/market/presign/image",
   ]) {
-    it(`${path}는 regular_member에게 허용된다`, async () => {
+    it(`${path}는 regular_member 권한을 리소스 정책에 따라 적용한다`, async () => {
       const issuePresignedPutUrl = fn(async () => ({
         uploadUrl: "https://upload.example.com/signed",
         objectKey: "activities/object-key",
@@ -303,6 +303,13 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
           fileSize: 1024,
         }),
       });
+
+      if (path.startsWith("/api/activities/")) {
+        expect(response.status).toBe(403);
+        await expectErrorCode(response, "FORBIDDEN");
+        expect(issuePresignedPutUrl).not.toHaveBeenCalled();
+        return;
+      }
 
       expect(response.status).toBe(201);
       expect(issuePresignedPutUrl).toHaveBeenCalled();
@@ -1115,6 +1122,34 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
       missingStorageResponse,
     );
     expect(missingStorageBody.error.message).toContain("R2_*");
+  });
+
+  it("/api/activities/multipart/detail/init은 regular_member에게 403을 반환한다", async () => {
+    const initiateMultipartUpload = fn(async () => ({
+      uploadId: "activity-upload-id",
+      objectKey: `activities/${IDs.member}/detail/activity-image-key`,
+      publicUrl: "https://cdn.example.com/activities/activity-image-key",
+      partSize: UPLOAD_LIMITS.multipartPartSizeBytes,
+      maxPartNumber: 4,
+    }));
+    const app = createTestApp({
+      actor: createActor("regular_member", IDs.member),
+      presignService: createPresignServiceMock({ initiateMultipartUpload }),
+    });
+
+    const response = await app.request("/api/activities/multipart/detail/init", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        fileName: "detail.png",
+        contentType: "image/png",
+        fileSize: UPLOAD_LIMITS.multipartPartSizeBytes * 2,
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    await expectErrorCode(response, "FORBIDDEN");
+    expect(initiateMultipartUpload).not.toHaveBeenCalled();
   });
 
   it("/api/market/multipart/image/init은 regular_member에게 허용되고 unverified는 403을 반환한다", async () => {
