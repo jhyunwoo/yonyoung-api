@@ -3,7 +3,7 @@ import { createTestApp, readJson } from "../../src/tests/test-helpers";
 
 describe("openapi docs endpoints", () => {
   it("serves OpenAPI JSON on /doc and /api/openapi.json", async () => {
-    const app = createTestApp({ actor: null });
+    const app = createTestApp({ actor: null, isDocsEnabled: true });
 
     const docResponse = await app.request("/doc");
     expect(docResponse.status).toBe(200);
@@ -26,7 +26,7 @@ describe("openapi docs endpoints", () => {
   });
 
   it("serves docs UI on /ui and /api/docs", async () => {
-    const app = createTestApp({ actor: null });
+    const app = createTestApp({ actor: null, isDocsEnabled: true });
 
     const uiResponse = await app.request("/ui");
     expect(uiResponse.status).toBe(200);
@@ -35,5 +35,20 @@ describe("openapi docs endpoints", () => {
     const legacyUiResponse = await app.request("/api/docs");
     expect(legacyUiResponse.status).toBe(200);
     expect(legacyUiResponse.headers.get("content-type")).toContain("text/html");
+  });
+
+  it("returns 404 for all docs aliases when docs are disabled", async () => {
+    const app = createTestApp({ actor: null, isDocsEnabled: false });
+
+    const responses = await Promise.all([
+      app.request("/doc"),
+      app.request("/api/openapi.json"),
+      app.request("/ui"),
+      app.request("/api/docs"),
+    ]);
+
+    for (const response of responses) {
+      expect(response.status).toBe(404);
+    }
   });
 });

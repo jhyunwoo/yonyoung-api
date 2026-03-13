@@ -52,6 +52,7 @@ describe("OpenAPI docs quality", /** describe 실행 과정에서 필요한 연�
        * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
        */
       getAuthOpenApiSchema: async () => authOpenApiFixtureWithUnknownPath,
+      isDocsEnabled: () => true,
     });
 
     const response = await app.request("/api/openapi.json");
@@ -113,6 +114,7 @@ describe("OpenAPI docs quality", /** describe 실행 과정에서 필요한 연�
        * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
        */
       getAuthOpenApiSchema: async () => authOpenApiFixtureWithUnknownPath,
+      isDocsEnabled: () => true,
     });
 
     const response = await app.request("/api/openapi.json");
@@ -161,6 +163,7 @@ describe("OpenAPI docs quality", /** describe 실행 과정에서 필요한 연�
        * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
        */
       getAuthOpenApiSchema: async () => authOpenApiFixtureWithUnknownPath,
+      isDocsEnabled: () => true,
     });
 
     const response = await app.request("/api/openapi.json");

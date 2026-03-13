@@ -10,7 +10,7 @@ import { DataService, PresignService } from "./types";
 import { createR2PresignService } from "../storage/presign";
 import type { OpenAPIDocument } from "../openapi/merge";
 import { getDbDataService } from "../db/factory";
-import { resolveDocsAuthEnabled } from "../config/runtime-env";
+import { resolveDocsEnabled } from "../config/runtime-env";
 import { createD1SequentialSession, resolveD1SessionMode } from "../db/d1-session";
 import { createRetryingD1Database } from "../db/d1-client";
 import { readR2TotalUsageBytes } from "../storage/usage";
@@ -31,7 +31,7 @@ export type GetAuthOpenApiSchema = (
   c: Context<HonoAppType>,
 ) => Promise<OpenAPIDocument>;
 
-export type ShouldRequireDocsAuth = (c: Context<HonoAppType>) => boolean;
+export type IsDocsEnabled = (c: Context<HonoAppType>) => boolean;
 
 export type AppDependencies = {
   resolveActor: ResolveActor;
@@ -39,12 +39,12 @@ export type AppDependencies = {
   getPresignService: GetPresignService;
   readR2TotalUsageBytes: ReadR2TotalUsageBytes;
   getAuthOpenApiSchema: GetAuthOpenApiSchema;
-  shouldRequireDocsAuth: ShouldRequireDocsAuth;
+  isDocsEnabled: IsDocsEnabled;
 };
 
 export const createDefaultDependencies = (): AppDependencies => ({
   resolveActor: getActorFromSession,
-  shouldRequireDocsAuth: (c) => resolveDocsAuthEnabled(c.env),
+  isDocsEnabled: (c) => resolveDocsEnabled(c.env),
   getDataService: (c) => {
     const cached = c.get("dataService");
     if (cached) {
