@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { REQUIRED_DESCRIPTION_SECTIONS } from "../lib/openapi/descriptions";
 import { OpenAPIDocument } from "../lib/openapi/merge";
-import { createActor } from "./test-helpers";
+import { expectErrorCode } from "./test-helpers";
 
 const authOpenApiFixture: OpenAPIDocument = {
   openapi: "3.1.1",
@@ -50,74 +50,54 @@ const authOpenApiFixture: OpenAPIDocument = {
 };
 
 type CreateDocsAppInput = {
-  actor?: ReturnType<typeof createActor> | null;
-  requireDocsAuth?: boolean;
+  isDocsEnabled?: boolean;
   getAuthOpenApiSchema?: () => Promise<OpenAPIDocument>;
 };
 
 const createDocsApp = (input: CreateDocsAppInput = {}) => {
   const {
-    actor = null,
-    requireDocsAuth = false,
+    isDocsEnabled = true,
     getAuthOpenApiSchema = async () => authOpenApiFixture,
   } = input;
 
   return createApp({
-    resolveActor: async () => actor,
+    resolveActor: async () => null,
     getAuthOpenApiSchema,
-    shouldRequireDocsAuth: () => requireDocsAuth,
+    isDocsEnabled: () => isDocsEnabled,
   });
 };
 
 describe("OpenAPI docs routes", () => {
-  it("docs 인증 활성화 시 비로그인 접근은 /api/docs에서 401을 반환한다", async () => {
-    const app = createDocsApp({ requireDocsAuth: true });
+  it("docs 비활성화 상태에서는 /api/docs에서 404를 반환한다", async () => {
+    const app = createDocsApp({ isDocsEnabled: false });
 
     const response = await app.request("/api/docs");
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(404);
+    await expectErrorCode(response, "NOT_FOUND");
   });
 
-  it("docs 인증 활성화 시 비로그인 접근은 /api/openapi.json에서 401을 반환한다", async () => {
-    const app = createDocsApp({ requireDocsAuth: true });
+  it("docs 비활성화 상태에서는 /api/openapi.json에서 404를 반환한다", async () => {
+    const app = createDocsApp({ isDocsEnabled: false });
 
     const response = await app.request("/api/openapi.json");
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(404);
+    await expectErrorCode(response, "NOT_FOUND");
   });
 
-  it("docs 인증 활성화 시 관리자 권한 사용자는 /api/docs와 /api/openapi.json에 접근할 수 있다", async () => {
-    const app = createDocsApp({
-      actor: createActor("manager"),
-      requireDocsAuth: true,
-    });
+  it("docs 비활성화 상태에서는 /ui와 /doc alias도 함께 숨긴다", async () => {
+    const app = createDocsApp({ isDocsEnabled: false });
 
-    const docsResponse = await app.request("/api/docs");
-    expect(docsResponse.status).toBe(200);
-    expect(docsResponse.headers.get("cache-control")).toBe(
-      "private, no-store, max-age=0",
-    );
+    const uiResponse = await app.request("/ui");
+    expect(uiResponse.status).toBe(404);
+    await expectErrorCode(uiResponse, "NOT_FOUND");
 
-    const openApiResponse = await app.request("/api/openapi.json");
-    expect(openApiResponse.status).toBe(200);
-    expect(openApiResponse.headers.get("cache-control")).toBe(
-      "private, no-store, max-age=0",
-    );
+    const docResponse = await app.request("/doc");
+    expect(docResponse.status).toBe(404);
+    await expectErrorCode(docResponse, "NOT_FOUND");
   });
 
-  it("docs 인증 활성화 시 일반 회원은 /api/docs와 /api/openapi.json에 접근할 수 없다", async () => {
-    const app = createDocsApp({
-      actor: createActor("regular_member"),
-      requireDocsAuth: true,
-    });
-
-    const docsResponse = await app.request("/api/docs");
-    expect(docsResponse.status).toBe(403);
-
-    const openApiResponse = await app.request("/api/openapi.json");
-    expect(openApiResponse.status).toBe(403);
-  });
-
-  it("docs 인증 비활성화 상태에서 통합 OpenAPI 문서를 반환한다", async () => {
-    const app = createDocsApp({ requireDocsAuth: false });
+  it("docs 활성화 상태에서 통합 OpenAPI 문서를 반환한다", async () => {
+    const app = createDocsApp({ isDocsEnabled: true });
 
     const response = await app.request("/api/openapi.json");
     expect(response.status).toBe(200);
@@ -157,8 +137,8 @@ describe("OpenAPI docs routes", () => {
     );
   });
 
-  it("docs 인증 비활성화 상태에서 /api/docs 페이지를 반환한다", async () => {
-    const app = createDocsApp({ requireDocsAuth: false });
+  it("docs 활성화 상태에서 /api/docs 페이지를 반환한다", async () => {
+    const app = createDocsApp({ isDocsEnabled: true });
 
     const response = await app.request("/api/docs");
     expect(response.status).toBe(200);
@@ -174,7 +154,7 @@ describe("OpenAPI docs routes", () => {
   it("동일 origin 요청에서는 OpenAPI 문서 캐시를 재사용해 재생성을 피한다", async () => {
     const getAuthOpenApiSchema = vi.fn(async () => authOpenApiFixture);
     const app = createDocsApp({
-      requireDocsAuth: false,
+      isDocsEnabled: true,
       getAuthOpenApiSchema,
     });
     const origin = `https://docs-cache-${Date.now()}.example.com`;
@@ -217,7 +197,7 @@ describe("OpenAPI docs routes", () => {
       } satisfies OpenAPIDocument;
     });
     const app = createDocsApp({
-      requireDocsAuth: false,
+      isDocsEnabled: true,
       getAuthOpenApiSchema,
     });
     const origin = `https://docs-stale-${Date.now()}.example.com`;
@@ -236,5 +216,52 @@ describe("OpenAPI docs routes", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(getAuthOpenApiSchema).toHaveBeenCalledTimes(2);
+  });
+
+  it("기본 의존성 사용 시 DOCS_ENABLED=true 환경 변수에서 docs를 공개한다", async () => {
+    const app = createApp({
+      resolveActor: async () => null,
+      getAuthOpenApiSchema: async () => authOpenApiFixture,
+    });
+
+    const response = await app.request(
+      "/api/openapi.json",
+      undefined,
+      { DOCS_ENABLED: "true" } as any,
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("기본 의존성 사용 시 DOCS_ENABLED=false 환경 변수에서 docs를 숨긴다", async () => {
+    const app = createApp({
+      resolveActor: async () => null,
+      getAuthOpenApiSchema: async () => authOpenApiFixture,
+    });
+
+    const response = await app.request(
+      "/api/openapi.json",
+      undefined,
+      { DOCS_ENABLED: "false" } as any,
+    );
+
+    expect(response.status).toBe(404);
+    await expectErrorCode(response, "NOT_FOUND");
+  });
+
+  it("레거시 DOCS_AUTH_IN_PROD=true 환경 변수도 docs 비노출로 해석한다", async () => {
+    const app = createApp({
+      resolveActor: async () => null,
+      getAuthOpenApiSchema: async () => authOpenApiFixture,
+    });
+
+    const response = await app.request(
+      "/api/openapi.json",
+      undefined,
+      { DOCS_AUTH_IN_PROD: "true" } as any,
+    );
+
+    expect(response.status).toBe(404);
+    await expectErrorCode(response, "NOT_FOUND");
   });
 });

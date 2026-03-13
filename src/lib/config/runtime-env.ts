@@ -184,10 +184,22 @@ export const resolveAuthRuntimeEnv = (
   };
 };
 
-export const resolveDocsAuthEnabled = (
+export const resolveDocsEnabled = (
   env: Partial<AppBindings> | undefined,
-): boolean =>
-  parseBooleanString(
-    readBindingValue(env, "DOCS_AUTH_IN_PROD") ?? readProcessValue("DOCS_AUTH_IN_PROD"),
-    false,
-  );
+): boolean => {
+  const explicitValue =
+    readBindingValue(env, "DOCS_ENABLED") ?? readProcessValue("DOCS_ENABLED");
+  if (explicitValue !== undefined) {
+    return parseBooleanString(explicitValue, false);
+  }
+
+  const legacyRequireAuthValue =
+    readBindingValue(env, "DOCS_AUTH_IN_PROD") ??
+    readProcessValue("DOCS_AUTH_IN_PROD");
+
+  if (legacyRequireAuthValue !== undefined) {
+    return !parseBooleanString(legacyRequireAuthValue, false);
+  }
+
+  return false;
+};

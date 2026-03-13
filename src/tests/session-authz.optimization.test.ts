@@ -6,7 +6,7 @@ describe("session + authz optimization", () => {
     const resolveActor = vi.fn(async () => null);
     const app = createApp({
       resolveActor,
-      shouldRequireDocsAuth: () => false,
+      isDocsEnabled: () => true,
       getAuthOpenApiSchema: async () => ({
         openapi: "3.1.1",
         info: { title: "auth", version: "1.0.0" },

@@ -3,7 +3,7 @@
 	"version": "1.0.0",
 	"type": "module",
 	"scripts": {
-		"dev": "pnpm run db:migrate:local && wrangler dev",
+		"dev": "pnpm run db:migrate:local && wrangler dev --env dev",
 		"deploy": "wrangler deploy --minify",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings",
 		"lint": "eslint src --max-warnings 0",
