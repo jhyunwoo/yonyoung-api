@@ -88,6 +88,25 @@ pnpm test:coverage
 pnpm deploy
 ```
 
+### Workers Builds troubleshooting
+
+If Cloudflare Workers Builds fails with the message below, the selected build token in the
+Cloudflare dashboard is stale and must be replaced in the dashboard settings:
+
+```text
+The build token selected for this build has been deleted or rolled and cannot be used for this build.
+```
+
+Recovery steps:
+
+1. In Cloudflare Dashboard, open `Workers & Pages` and select the `yonyoung-api` Worker.
+2. Open `Settings > Build`.
+3. In `API token`, select `Create new token` or choose another active user token.
+4. Save the build settings and retry the failed build.
+
+For this repository, the expected Worker name is `yonyoung-api` and the Wrangler configuration
+file is at the repository root: `wrangler.jsonc`.
+
 ## CI
 
 PR에서 다음 검증이 수행됩니다.
