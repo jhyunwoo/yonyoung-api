@@ -271,6 +271,16 @@ export type AdminDashboardStatsEntity = {
   linktreeLinksTotal: number;
 };
 
+export type PageViewStatsEntity = {
+  totalViews: number;
+  homeViews: number;
+  activityViews: number;
+  exhibitionViews: number;
+  topActivities: Array<{ resourceId: string; count: number }>;
+  topExhibitions: Array<{ resourceId: string; count: number }>;
+  dailyTrend: Array<{ date: string; count: number }>;
+};
+
 export type DataService = {
   createAuditLog: (input: {
     resourceType: AuditResourceType;
@@ -591,6 +601,8 @@ export type DataService = {
     role: string;
   }) => Promise<UserEntity[]>;
   getAdminDashboardStats: (generationSortOrder: number | null) => Promise<AdminDashboardStatsEntity>;
+  recordPageView: (pageType: string, resourceId: string | undefined) => Promise<void>;
+  getPageViewStats: () => Promise<PageViewStatsEntity>;
   deleteUser: (id: string) => Promise<boolean>;
 };
 

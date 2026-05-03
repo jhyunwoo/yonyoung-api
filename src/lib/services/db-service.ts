@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { DEFAULT_SITE_SETTINGS } from "../../shared/api-contracts";
 import createDB from "../db";
 import {
@@ -16,6 +16,7 @@ import {
 	marketItemImages,
 	marketItems,
 	marketPushSubscriptions,
+	pageViews,
 	recruitingPlans,
 	siteSettings,
 	user,
@@ -3991,6 +3992,110 @@ export const createDbDataService = (database: D1Database): DataService => {
 				selectedGenerationActivitiesTotal,
 				selectedGenerationExhibitionsTotal,
 				linktreeLinksTotal: linktreeLinksCountRows[0]?.value ?? 0,
+			};
+		},
+		/**
+		 * recordPageView 페이지 방문 기록을 page_views 테이블에 추가합니다.
+		 * @param pageType 'home' | 'activity' | 'exhibition'
+		 * @param resourceId 리소스 ID (홈인 경우 undefined)
+		 * @returns 처리 결과를 Promise로 반환합니다.
+		 * @remarks fire-and-forget 방식으로 호출자가 에러를 무시할 수 있도록 가벼운 단일 INSERT만 수행합니다.
+		 */
+		async recordPageView(pageType, resourceId) {
+			await db.insert(pageViews).values({
+				id: crypto.randomUUID(),
+				pageType,
+				resourceId: resourceId ?? null,
+			});
+		},
+		/**
+		 * getPageViewStats 방문 통계를 집계해 반환합니다.
+		 * @returns 전체/타입별 카운트, 상위 활동/전시, 30일 일별 추세를 포함한 통계.
+		 * @remarks 모든 집계 쿼리는 page_views 테이블 단독 조회로 수행됩니다.
+		 */
+		async getPageViewStats() {
+			const countsByType = await db
+				.select({
+					pageType: pageViews.pageType,
+					count: sql<number>`count(*)`,
+				})
+				.from(pageViews)
+				.groupBy(pageViews.pageType);
+
+			let homeViews = 0;
+			let activityViews = 0;
+			let exhibitionViews = 0;
+			for (const row of countsByType) {
+				const value = Number(row.count) || 0;
+				if (row.pageType === "home") {
+					homeViews = value;
+				} else if (row.pageType === "activity") {
+					activityViews = value;
+				} else if (row.pageType === "exhibition") {
+					exhibitionViews = value;
+				}
+			}
+			const totalViews = homeViews + activityViews + exhibitionViews;
+
+			const topActivitiesRows = await db
+				.select({
+					resourceId: pageViews.resourceId,
+					count: sql<number>`count(*)`,
+				})
+				.from(pageViews)
+				.where(eq(pageViews.pageType, "activity"))
+				.groupBy(pageViews.resourceId)
+				.orderBy(sql`count(*) desc`)
+				.limit(10);
+
+			const topExhibitionsRows = await db
+				.select({
+					resourceId: pageViews.resourceId,
+					count: sql<number>`count(*)`,
+				})
+				.from(pageViews)
+				.where(eq(pageViews.pageType, "exhibition"))
+				.groupBy(pageViews.resourceId)
+				.orderBy(sql`count(*) desc`)
+				.limit(10);
+
+			const thirtyDaysAgo = new Date();
+			thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+			const dailyTrendRows = await db
+				.select({
+					date: sql<string>`date(${pageViews.visitedAt} / 1000, 'unixepoch')`,
+					count: sql<number>`count(*)`,
+				})
+				.from(pageViews)
+				.where(gte(pageViews.visitedAt, thirtyDaysAgo))
+				.groupBy(sql`date(${pageViews.visitedAt} / 1000, 'unixepoch')`)
+				.orderBy(sql`date(${pageViews.visitedAt} / 1000, 'unixepoch')`);
+
+			return {
+				totalViews,
+				homeViews,
+				activityViews,
+				exhibitionViews,
+				topActivities: topActivitiesRows
+					.filter((row): row is { resourceId: string; count: number } =>
+						typeof row.resourceId === "string" && row.resourceId.length > 0,
+					)
+					.map((row) => ({
+						resourceId: row.resourceId,
+						count: Number(row.count) || 0,
+					})),
+				topExhibitions: topExhibitionsRows
+					.filter((row): row is { resourceId: string; count: number } =>
+						typeof row.resourceId === "string" && row.resourceId.length > 0,
+					)
+					.map((row) => ({
+						resourceId: row.resourceId,
+						count: Number(row.count) || 0,
+					})),
+				dailyTrend: dailyTrendRows.map((row) => ({
+					date: row.date,
+					count: Number(row.count) || 0,
+				})),
 			};
 		},
 		/**

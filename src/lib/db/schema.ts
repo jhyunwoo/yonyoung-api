@@ -765,3 +765,20 @@ export const marketPushSubscriptionsRelations = relations(
     }),
   }),
 );
+
+export const pageViews = sqliteTable(
+  "page_views",
+  {
+    id: text("id").primaryKey(),
+    pageType: text("page_type").notNull(), // 'home' | 'activity' | 'exhibition'
+    resourceId: text("resource_id"), // null for home
+    visitedAt: integer("visited_at", { mode: "timestamp_ms" })
+      .default(nowTimestamp)
+      .notNull(),
+  },
+  (table) => [
+    index("page_views_page_type_idx").on(table.pageType),
+    index("page_views_resource_id_idx").on(table.resourceId),
+    index("page_views_visited_at_idx").on(table.visitedAt),
+  ],
+);

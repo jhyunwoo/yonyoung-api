@@ -2166,6 +2166,46 @@ export const ApiMultipartUploadAbortRequestSchema = z
   .strict()
   .openapi("ApiMultipartUploadAbortRequest");
 
+export const ApiRecordPageViewRequestSchema = z
+  .object({
+    pageType: z.enum(["home", "activity", "exhibition"]).openapi({
+      description: "페이지 타입",
+      example: "activity",
+    }),
+    resourceId: z.string().optional().openapi({
+      description: "리소스 ID (activity/exhibition의 경우)",
+      example: "abc123",
+    }),
+  })
+  .openapi("ApiRecordPageViewRequest");
+
+export const ApiPageViewStatsSchema = z
+  .object({
+    totalViews: z.number().int().nonnegative().openapi({ description: "전체 방문 수" }),
+    homeViews: z.number().int().nonnegative().openapi({ description: "홈 방문 수" }),
+    activityViews: z.number().int().nonnegative().openapi({ description: "활동 방문 수" }),
+    exhibitionViews: z.number().int().nonnegative().openapi({ description: "전시 방문 수" }),
+    topActivities: z.array(
+      z.object({
+        resourceId: z.string(),
+        count: z.number().int().nonnegative(),
+      })
+    ).openapi({ description: "조회수 상위 활동 (최대 10개)" }),
+    topExhibitions: z.array(
+      z.object({
+        resourceId: z.string(),
+        count: z.number().int().nonnegative(),
+      })
+    ).openapi({ description: "조회수 상위 전시 (최대 10개)" }),
+    dailyTrend: z.array(
+      z.object({
+        date: z.string(),
+        count: z.number().int().nonnegative(),
+      })
+    ).openapi({ description: "최근 30일 일별 방문 추세" }),
+  })
+  .openapi("ApiPageViewStats");
+
 export const ApiOpenApiDocumentSchema = z
   .object({
     openapi: z.string().openapi({
