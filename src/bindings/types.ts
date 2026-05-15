@@ -7,6 +7,7 @@ export type Bindings = CloudflareBindings & {
   R2?: R2Bucket;
   r2?: R2Bucket;
   PERF_ANALYTICS?: AnalyticsEngineDataset;
+  VIEW_ANALYTICS?: AnalyticsEngineDataset;
   BETTER_AUTH_URL?: string;
   BETTER_AUTH_TRUSTED_ORIGINS?: string;
   BETTER_AUTH_SECRET?: string;
@@ -28,6 +29,9 @@ export type Bindings = CloudflareBindings & {
   D1_WRITE_RETRY_MAX_DELAY_MS?: string;
   PERF_ANALYTICS_ENABLED?: string;
   PERF_ANALYTICS_SAMPLE_RATE?: string;
+  VIEW_ANALYTICS_ENABLED?: string;
+  CF_ACCOUNT_ID?: string;
+  CF_ANALYTICS_API_TOKEN?: string;
   CSP_REPORT_ONLY?: string;
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;

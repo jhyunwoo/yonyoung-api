@@ -14,6 +14,14 @@ import { resolveDocsEnabled } from "../config/runtime-env";
 import { createD1SequentialSession, resolveD1SessionMode } from "../db/d1-session";
 import { createRetryingD1Database } from "../db/d1-client";
 import { readR2TotalUsageBytes } from "../storage/usage";
+import {
+  createViewAnalyticsWriter,
+  createViewAnalyticsReader,
+  createNoopViewAnalyticsReader,
+  type ViewAnalyticsWriter,
+  type ViewAnalyticsReader,
+} from "../analytics/view-analytics";
+import { parseBooleanEnv as parseBoolEnv } from "../../bindings/env";
 
 export type ResolveActor = (
   c: Context<HonoAppType>,
@@ -40,6 +48,8 @@ export type AppDependencies = {
   readR2TotalUsageBytes: ReadR2TotalUsageBytes;
   getAuthOpenApiSchema: GetAuthOpenApiSchema;
   isDocsEnabled: IsDocsEnabled;
+  getViewAnalyticsWriter: (c: Context<HonoAppType>) => ViewAnalyticsWriter;
+  getViewAnalyticsReader: (c: Context<HonoAppType>) => ViewAnalyticsReader;
 };
 
 export const createDefaultDependencies = (): AppDependencies => ({
@@ -73,6 +83,19 @@ export const createDefaultDependencies = (): AppDependencies => ({
   },
   getPresignService: (c) => createR2PresignService(c.env),
   readR2TotalUsageBytes: (c) => readR2TotalUsageBytes(resolveR2Bucket(c.env)),
+  getViewAnalyticsWriter: (c) =>
+    createViewAnalyticsWriter(
+      c.env?.VIEW_ANALYTICS,
+      parseBoolEnv(c.env?.VIEW_ANALYTICS_ENABLED, true),
+    ),
+  getViewAnalyticsReader: (c) => {
+    const accountId = c.env?.CF_ACCOUNT_ID;
+    const apiToken = c.env?.CF_ANALYTICS_API_TOKEN;
+    if (!accountId || !apiToken) {
+      return createNoopViewAnalyticsReader();
+    }
+    return createViewAnalyticsReader(accountId, apiToken);
+  },
   getAuthOpenApiSchema: async (c) => {
     const database = resolveD1Database(c.env);
     const auth = createAuth(database, c.env);
