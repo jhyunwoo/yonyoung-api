@@ -7,11 +7,20 @@ import {
   ApiLinktreeSchema,
   ApiPublicGenerationWithMembersSchema,
   ApiRecruitingPlanSchema,
+  ApiRecordViewBodySchema,
   ApiSiteSettingsSchema,
+  ApiViewCountsQuerySchema,
+  ApiViewCountsResponseSchema,
 } from "../lib/openapi/schemas";
-import { dataResponse, errorResponses } from "../lib/openapi/responses";
-import { badRequest, internalError, notFound, ok } from "../lib/http/response";
+import {
+  dataResponse,
+  errorResponses,
+  noContentResponse,
+  jsonBody,
+} from "../lib/openapi/responses";
+import { badRequest, internalError, noContent, notFound, ok } from "../lib/http/response";
 import { respondWithPublicCache } from "../lib/http/public-cache";
+import { runInBackground } from "../lib/http/background-task";
 import { AppDependencies } from "../lib/services/dependencies";
 import HonoAppType from "../types/honoAppType";
 import { sanitizeRichTextHtml } from "../lib/content/rich-text";
@@ -186,6 +195,34 @@ const listPublicPhotographersRoute = createRoute({
       ApiPublicGenerationWithMembersSchema.array(),
       "공개 기수별 사진가 목록 조회 성공",
     ),
+  },
+});
+
+const recordViewRoute = createRoute({
+  method: "post",
+  path: "/api/public/views",
+  tags: ["Public"],
+  operationId: "recordView",
+  request: {
+    body: jsonBody(ApiRecordViewBodySchema, "조회수 기록 요청 본문"),
+  },
+  responses: {
+    204: noContentResponse,
+    400: errorResponses[400],
+  },
+});
+
+const getViewCountsRoute = createRoute({
+  method: "get",
+  path: "/api/public/views",
+  tags: ["Public"],
+  operationId: "getViewCounts",
+  request: {
+    query: ApiViewCountsQuerySchema,
+  },
+  responses: {
+    200: dataResponse(ApiViewCountsResponseSchema, "조회수 일괄 조회 성공"),
+    400: errorResponses[400],
   },
 });
 
@@ -401,6 +438,62 @@ export const registerPublicRoutes = (
       });
 
       return ok(c, data);
+    }),
+  );
+
+  app.openapi(recordViewRoute, async (c): Promise<any> => {
+    const parsed = ApiRecordViewBodySchema.safeParse(await c.req.json());
+    if (!parsed.success) {
+      return badRequest(
+        c,
+        parsed.error.issues[0]?.message ?? "잘못된 요청입니다.",
+      );
+    }
+
+    const { resourceType, resourceId } = parsed.data;
+    const writer = dependencies.getViewAnalyticsWriter(c);
+
+    await runInBackground(c, Promise.resolve().then(() => {
+      writer.recordView(resourceType, resourceId);
+    }));
+
+    return noContent(c);
+  });
+
+  app.openapi(getViewCountsRoute, async (c): Promise<any> =>
+    respondWithPublicCache(c, async () => {
+      const query = ApiViewCountsQuerySchema.safeParse(c.req.query());
+      if (!query.success) {
+        return badRequest(
+          c,
+          query.error.issues[0]?.message ?? "잘못된 요청입니다.",
+        );
+      }
+
+      const { resourceType, resourceIds: rawIds } = query.data;
+      const resourceIds = rawIds
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0);
+
+      if (resourceIds.length === 0) {
+        return badRequest(c, "resourceIds에 유효한 ID가 포함되어야 합니다.");
+      }
+
+      if (resourceIds.length > 100) {
+        return badRequest(c, "한 번에 최대 100개의 리소스만 조회할 수 있습니다.");
+      }
+
+      const reader = dependencies.getViewAnalyticsReader(c);
+      const counts = await reader.getViewCounts(resourceType, resourceIds);
+
+      // 요청된 모든 리소스 ID에 대해 결과를 보장 (없으면 0)
+      const result: Record<string, number> = {};
+      for (const id of resourceIds) {
+        result[id] = counts[id] ?? 0;
+      }
+
+      return ok(c, result);
     }),
   );
 };

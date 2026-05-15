@@ -2001,6 +2001,40 @@ export const ApiAdminDashboardStatsSchema = z
   })
   .openapi("ApiAdminDashboardStats");
 
+export const ApiRecordViewBodySchema = z
+  .object({
+    resourceType: z.enum(["activity", "exhibition"]).openapi({
+      description: "조회수를 기록할 리소스 타입",
+      example: "activity",
+    }),
+    resourceId: z.string().uuid().openapi({
+      description: "조회수를 기록할 리소스 UUID",
+      example: EXAMPLE_ID,
+    }),
+  })
+  .strict()
+  .openapi("ApiRecordViewBody");
+
+export const ApiViewCountsQuerySchema = z
+  .object({
+    resourceType: z.enum(["activity", "exhibition"]).openapi({
+      description: "조회수를 조회할 리소스 타입",
+      example: "activity",
+    }),
+    resourceIds: z
+      .string()
+      .min(1, "resourceIds는 필수입니다.")
+      .openapi({
+        description: "쉼표(,)로 구분된 리소스 UUID 목록",
+        example: `${EXAMPLE_ID},${EXAMPLE_PARENT_ID}`,
+      }),
+  })
+  .openapi("ApiViewCountsQuery");
+
+export const ApiViewCountsResponseSchema = z
+  .record(z.string(), z.number().int().nonnegative())
+  .openapi("ApiViewCountsResponse");
+
 export const ApiPresignRequestSchema = z
   .object({
     fileName: z.string().min(1, "fileName은 필수입니다.").openapi({
