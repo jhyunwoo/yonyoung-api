@@ -2003,21 +2003,25 @@ export const ApiAdminDashboardStatsSchema = z
 
 export const ApiRecordViewBodySchema = z
   .object({
-    resourceType: z.enum(["activity", "exhibition"]).openapi({
+    resourceType: z.enum(["activity", "exhibition", "home", "notice"]).openapi({
       description: "조회수를 기록할 리소스 타입",
       example: "activity",
     }),
-    resourceId: z.string().uuid().openapi({
-      description: "조회수를 기록할 리소스 UUID",
-      example: EXAMPLE_ID,
-    }),
+    resourceId: z
+      .string()
+      .uuid()
+      .optional()
+      .openapi({
+        description: "조회수를 기록할 리소스 UUID (home인 경우 생략 가능)",
+        example: EXAMPLE_ID,
+      }),
   })
   .strict()
   .openapi("ApiRecordViewBody");
 
 export const ApiViewCountsQuerySchema = z
   .object({
-    resourceType: z.enum(["activity", "exhibition"]).openapi({
+    resourceType: z.enum(["activity", "exhibition", "home", "notice"]).openapi({
       description: "조회수를 조회할 리소스 타입",
       example: "activity",
     }),
@@ -2202,12 +2206,12 @@ export const ApiMultipartUploadAbortRequestSchema = z
 
 export const ApiRecordPageViewRequestSchema = z
   .object({
-    pageType: z.enum(["home", "activity", "exhibition"]).openapi({
+    pageType: z.enum(["home", "activity", "exhibition", "notice"]).openapi({
       description: "페이지 타입",
       example: "activity",
     }),
     resourceId: z.string().optional().openapi({
-      description: "리소스 ID (activity/exhibition의 경우)",
+      description: "리소스 ID (activity/exhibition/notice의 경우)",
       example: "abc123",
     }),
   })

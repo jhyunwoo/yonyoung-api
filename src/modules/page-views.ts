@@ -83,6 +83,16 @@ export const registerPageViewRoutes = (
       // fire-and-forget: 기록 실패는 무시
     }
 
+    // 2. aggregated count 업데이트 (public display용)
+    // activity, exhibition, notice, home 타입에 대해 통합 관리
+    try {
+      const store = dependencies.getViewCountStore(c);
+      const { pageType, resourceId } = parsed.data;
+      await store.recordView(pageType, resourceId ?? pageType);
+    } catch {
+      // fire-and-forget: 기록 실패는 무시
+    }
+
     return c.json({ ok: true } as const, 200);
   });
 

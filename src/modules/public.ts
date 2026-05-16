@@ -452,8 +452,17 @@ export const registerPublicRoutes = (
 
     const { resourceType, resourceId } = parsed.data;
     const store = dependencies.getViewCountStore(c);
+    const dataService = dependencies.getDataService(c);
 
-    await store.recordView(resourceType, resourceId);
+    // 1. aggregated count 업데이트 (public display용)
+    await store.recordView(resourceType, resourceId ?? resourceType);
+    
+    // 2. detailed log 기록 (admin stats용)
+    try {
+      await dataService.recordPageView(resourceType, resourceId);
+    } catch {
+      // fire-and-forget: log 기록 실패는 무시
+    }
 
     return noContent(c);
   });
@@ -485,11 +494,14 @@ export const registerPublicRoutes = (
       return badRequest(c, "한 번에 최대 100개의 리소스만 조회할 수 있습니다.");
     }
 
-    const invalidResourceId = resourceIds.find(
-      (id) => !ViewResourceIdSchema.safeParse(id).success,
-    );
-    if (invalidResourceId) {
-      return badRequest(c, "resourceIds에는 UUID만 포함할 수 있습니다.");
+    const isUuidType = resourceType === "activity" || resourceType === "exhibition" || resourceType === "notice";
+    if (isUuidType) {
+      const invalidResourceId = resourceIds.find(
+        (id) => !ViewResourceIdSchema.safeParse(id).success,
+      );
+      if (invalidResourceId) {
+        return badRequest(c, "resourceIds에는 UUID만 포함할 수 있습니다.");
+      }
     }
 
     const store = dependencies.getViewCountStore(c);

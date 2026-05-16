@@ -5,11 +5,13 @@
  * depending on Cloudflare Analytics Engine aggregation latency.
  */
 
-export type ViewResourceType = "activity" | "exhibition";
+export type ViewResourceType = "activity" | "exhibition" | "home" | "notice";
 
 const VALID_RESOURCE_TYPES = new Set<ViewResourceType>([
   "activity",
   "exhibition",
+  "home",
+  "notice",
 ]);
 
 export const isValidViewResourceType = (

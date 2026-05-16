@@ -152,12 +152,13 @@ describe("NoopViewCountStore", () => {
 });
 
 describe("isValidViewResourceType", () => {
-  it("activity와 exhibition만 유효하다", () => {
+  it("허용된 리소스 타입만 유효하다", () => {
     expect(isValidViewResourceType("activity")).toBe(true);
     expect(isValidViewResourceType("exhibition")).toBe(true);
+    expect(isValidViewResourceType("home")).toBe(true);
+    expect(isValidViewResourceType("notice")).toBe(true);
     expect(isValidViewResourceType("unknown")).toBe(false);
     expect(isValidViewResourceType("")).toBe(false);
-    expect(isValidViewResourceType("notice")).toBe(false);
   });
 });
 

@@ -3996,7 +3996,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 		},
 		/**
 		 * recordPageView 페이지 방문 기록을 page_views 테이블에 추가합니다.
-		 * @param pageType 'home' | 'activity' | 'exhibition'
+		 * @param pageType 'home' | 'activity' | 'exhibition' | 'notice'
 		 * @param resourceId 리소스 ID (홈인 경우 undefined)
 		 * @returns 처리 결과를 Promise로 반환합니다.
 		 * @remarks fire-and-forget 방식으로 호출자가 에러를 무시할 수 있도록 가벼운 단일 INSERT만 수행합니다.
@@ -4025,6 +4025,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 			let homeViews = 0;
 			let activityViews = 0;
 			let exhibitionViews = 0;
+			let noticeViews = 0;
 			for (const row of countsByType) {
 				const value = Number(row.count) || 0;
 				if (row.pageType === "home") {
@@ -4033,9 +4034,11 @@ export const createDbDataService = (database: D1Database): DataService => {
 					activityViews = value;
 				} else if (row.pageType === "exhibition") {
 					exhibitionViews = value;
+				} else if (row.pageType === "notice") {
+					noticeViews = value;
 				}
 			}
-			const totalViews = homeViews + activityViews + exhibitionViews;
+			const totalViews = homeViews + activityViews + exhibitionViews + noticeViews;
 
 			const topActivitiesRows = await db
 				.select({
@@ -4076,6 +4079,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 				homeViews,
 				activityViews,
 				exhibitionViews,
+				noticeViews,
 				topActivities: topActivitiesRows
 					.filter((row): row is { resourceId: string; count: number } =>
 						typeof row.resourceId === "string" && row.resourceId.length > 0,
