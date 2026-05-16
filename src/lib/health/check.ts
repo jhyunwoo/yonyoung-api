@@ -1,10 +1,12 @@
 import { createR2PresignService } from "../storage/presign";
+import { createD1ViewCountStore } from "../views/view-counts";
 import type { AppBindings } from "../../types/honoAppType";
 
 const DEFAULT_HEALTH_TIMEOUT_MS = 3_000;
 
 type HealthCheckService =
   | "d1"
+  | "view_counts"
   | "r2"
   | "r2_presign"
   | "durable_object"
@@ -214,6 +216,62 @@ const runD1Checks = async (
       }),
     ),
   );
+};
+
+const runViewCountCheck = async (
+  env: Partial<AppBindings>,
+): Promise<HealthCheckResult> => {
+  const database = env.DB ?? env.db;
+  const binding = env.DB ? "DB" : "db";
+
+  if (!isD1Database(database)) {
+    return {
+      service: "view_counts",
+      binding,
+      status: "unhealthy",
+      detail: "조회수 API가 사용할 D1 binding이 구성되지 않았습니다.",
+    };
+  }
+
+  return runTimedCheck({
+    service: "view_counts",
+    binding,
+    detail: "조회수 기록/조회 D1 round-trip으로 /api/public/views 동작 기반을 확인합니다.",
+    probe: async () => {
+      const resourceType = "activity";
+      const resourceId = crypto.randomUUID();
+      const store = createD1ViewCountStore(database);
+
+      try {
+        await store.recordView(resourceType, resourceId);
+        await store.recordView(resourceType, resourceId);
+
+        const counts = await store.getViewCounts(resourceType, [resourceId]);
+        if (counts[resourceId] !== 2) {
+          throw new Error(
+            `unexpected view count result: ${counts[resourceId] ?? "missing"}`,
+          );
+        }
+
+        return "조회수 기록/조회 round-trip이 정상입니다.";
+      } finally {
+        try {
+          await database
+            .prepare(
+              `
+                DELETE FROM view_counts
+                WHERE resource_type = ?
+                  AND resource_id = ?
+              `,
+            )
+            .bind(resourceType, resourceId)
+            .run();
+        } catch {
+          // Cleanup failure must not hide the primary health-check result.
+        }
+      }
+    },
+  });
 };
 
 const runR2BucketChecks = async (
@@ -427,12 +485,14 @@ export const runInfrastructureHealthChecks = async (
 
   const [
     d1Checks,
+    viewCountCheck,
     r2BucketChecks,
     r2PresignCheck,
     durableObjectChecks,
     fetcherBindingChecks,
   ] = await Promise.all([
     runD1Checks(runtimeEnv),
+    runViewCountCheck(runtimeEnv),
     runR2BucketChecks(runtimeEnv),
     runR2PresignCheck(runtimeEnv),
     runDurableObjectChecks(runtimeEnv),
@@ -441,6 +501,7 @@ export const runInfrastructureHealthChecks = async (
 
   const checks = [
     ...d1Checks,
+    viewCountCheck,
     ...r2BucketChecks,
     r2PresignCheck,
     ...durableObjectChecks,

@@ -20,9 +20,8 @@ import type {
 } from "../lib/services/types";
 import type { OpenAPIDocument } from "../lib/openapi/merge";
 import type {
-  ViewAnalyticsWriter,
-  ViewAnalyticsReader,
-} from "../lib/analytics/view-analytics";
+  ViewCountStore,
+} from "../lib/views/view-counts";
 
 export const IDs = {
   generation: "10000000-0000-4000-8000-000000000001",
@@ -396,11 +395,10 @@ export const createTestApp = (input: {
   readR2TotalUsageBytes?: () => Promise<number> | number;
   getAuthOpenApiSchema?: () => Promise<OpenAPIDocument>;
   isDocsEnabled?: boolean;
-  viewAnalyticsWriter?: ViewAnalyticsWriter;
-  viewAnalyticsReader?: ViewAnalyticsReader;
+  viewCountStore?: ViewCountStore;
 }) => {
-  const noopWriter: ViewAnalyticsWriter = { recordView: () => {} };
-  const noopReader: ViewAnalyticsReader = {
+  const noopViewCountStore: ViewCountStore = {
+    recordView: async () => undefined,
     getViewCounts: async () => ({}),
   };
 
@@ -434,10 +432,7 @@ export const createTestApp = (input: {
     isDocsEnabled:
       /** createApp 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () =>
         input.isDocsEnabled ?? true,
-    getViewAnalyticsWriter: () =>
-      input.viewAnalyticsWriter ?? noopWriter,
-    getViewAnalyticsReader: () =>
-      input.viewAnalyticsReader ?? noopReader,
+    getViewCountStore: () => input.viewCountStore ?? noopViewCountStore,
   });
 };
 

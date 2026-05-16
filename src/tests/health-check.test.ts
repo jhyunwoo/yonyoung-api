@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createMockD1Database } from "../../tests/setup/mock-bindings";
 import { runInfrastructureHealthChecks } from "../lib/health/check";
 import type { AppBindings } from "../types/honoAppType";
 
@@ -27,12 +28,7 @@ const createHealthyEnv = (): Partial<AppBindings> & Record<string, unknown> => {
   const objects = new Map<string, Uint8Array>();
 
   return {
-    db: {
-      prepare: () => ({
-        first: async () => ({ result: 1 }),
-      }),
-      batch: async () => [],
-    } as unknown as D1Database,
+    db: createMockD1Database(),
     r2: {
       put: async (
         key: string,
@@ -95,6 +91,11 @@ describe("runInfrastructureHealthChecks", () => {
     ).toBe(true);
     expect(
       report.checks.some(
+        (check) => check.service === "view_counts" && check.status === "healthy",
+      ),
+    ).toBe(true);
+    expect(
+      report.checks.some(
         (check) => check.service === "r2" && check.status === "healthy",
       ),
     ).toBe(true);
@@ -136,6 +137,12 @@ describe("runInfrastructureHealthChecks", () => {
       report.checks.some(
         (check) =>
           check.service === "r2_presign" && check.status === "unhealthy",
+      ),
+    ).toBe(true);
+    expect(
+      report.checks.some(
+        (check) =>
+          check.service === "view_counts" && check.status === "unhealthy",
       ),
     ).toBe(true);
   });

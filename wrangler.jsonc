@@ -40,10 +40,6 @@
     {
       "binding": "PERF_ANALYTICS",
       "dataset": "yonyoung_api_perf"
-    },
-    {
-      "binding": "VIEW_ANALYTICS",
-      "dataset": "yonyoung_views"
     }
   ],
   "vars": {
@@ -61,8 +57,7 @@
     "D1_WRITE_RETRY_BASE_DELAY_MS": "25",
     "D1_WRITE_RETRY_MAX_DELAY_MS": "500",
     "PERF_ANALYTICS_ENABLED": "false",
-    "PERF_ANALYTICS_SAMPLE_RATE": "0.2",
-    "VIEW_ANALYTICS_ENABLED": "true"
+    "PERF_ANALYTICS_SAMPLE_RATE": "0.2"
   },
   "env": {
     "dev": {
@@ -81,8 +76,7 @@
         "D1_WRITE_RETRY_BASE_DELAY_MS": "25",
         "D1_WRITE_RETRY_MAX_DELAY_MS": "500",
         "PERF_ANALYTICS_ENABLED": "false",
-        "PERF_ANALYTICS_SAMPLE_RATE": "0.2",
-        "VIEW_ANALYTICS_ENABLED": "true"
+        "PERF_ANALYTICS_SAMPLE_RATE": "0.2"
       },
       "r2_buckets": [
         {
@@ -104,10 +98,6 @@
         {
           "binding": "PERF_ANALYTICS",
           "dataset": "yonyoung_api_perf"
-        },
-        {
-          "binding": "VIEW_ANALYTICS",
-          "dataset": "yonyoung_views"
         }
       ]
     }

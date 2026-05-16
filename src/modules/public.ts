@@ -1,4 +1,4 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import {
   ApiActivitySchema,
   ApiExhibitionSchema,
@@ -20,7 +20,6 @@ import {
 } from "../lib/openapi/responses";
 import { badRequest, internalError, noContent, notFound, ok } from "../lib/http/response";
 import { respondWithPublicCache } from "../lib/http/public-cache";
-import { runInBackground } from "../lib/http/background-task";
 import { AppDependencies } from "../lib/services/dependencies";
 import HonoAppType from "../types/honoAppType";
 import { sanitizeRichTextHtml } from "../lib/content/rich-text";
@@ -36,7 +35,8 @@ import {
 type App = OpenAPIHono<HonoAppType>;
 const PUBLIC_MEDIA_CACHE_CONTROL =
   "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400";
-
+const VIEW_COUNTS_CACHE_CONTROL = "no-store, no-cache, must-revalidate";
+const ViewResourceIdSchema = z.string().uuid();
 const sanitizeExhibitionDescriptionField = <T extends { description: string }>(
   exhibition: T,
 ): T => ({
@@ -451,49 +451,58 @@ export const registerPublicRoutes = (
     }
 
     const { resourceType, resourceId } = parsed.data;
-    const writer = dependencies.getViewAnalyticsWriter(c);
+    const store = dependencies.getViewCountStore(c);
 
-    await runInBackground(c, Promise.resolve().then(() => {
-      writer.recordView(resourceType, resourceId);
-    }));
+    await store.recordView(resourceType, resourceId);
 
     return noContent(c);
   });
 
-  app.openapi(getViewCountsRoute, async (c): Promise<any> =>
-    respondWithPublicCache(c, async () => {
-      const query = ApiViewCountsQuerySchema.safeParse(c.req.query());
-      if (!query.success) {
-        return badRequest(
-          c,
-          query.error.issues[0]?.message ?? "잘못된 요청입니다.",
-        );
-      }
+  app.openapi(getViewCountsRoute, async (c): Promise<any> => {
+    const query = ApiViewCountsQuerySchema.safeParse(c.req.query());
+    if (!query.success) {
+      return badRequest(
+        c,
+        query.error.issues[0]?.message ?? "잘못된 요청입니다.",
+      );
+    }
 
-      const { resourceType, resourceIds: rawIds } = query.data;
-      const resourceIds = rawIds
-        .split(",")
-        .map((id) => id.trim())
-        .filter((id) => id.length > 0);
+    const { resourceType, resourceIds: rawIds } = query.data;
+    const resourceIds = Array.from(
+      new Set(
+        rawIds
+          .split(",")
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0),
+      ),
+    );
 
-      if (resourceIds.length === 0) {
-        return badRequest(c, "resourceIds에 유효한 ID가 포함되어야 합니다.");
-      }
+    if (resourceIds.length === 0) {
+      return badRequest(c, "resourceIds에 유효한 ID가 포함되어야 합니다.");
+    }
 
-      if (resourceIds.length > 100) {
-        return badRequest(c, "한 번에 최대 100개의 리소스만 조회할 수 있습니다.");
-      }
+    if (resourceIds.length > 100) {
+      return badRequest(c, "한 번에 최대 100개의 리소스만 조회할 수 있습니다.");
+    }
 
-      const reader = dependencies.getViewAnalyticsReader(c);
-      const counts = await reader.getViewCounts(resourceType, resourceIds);
+    const invalidResourceId = resourceIds.find(
+      (id) => !ViewResourceIdSchema.safeParse(id).success,
+    );
+    if (invalidResourceId) {
+      return badRequest(c, "resourceIds에는 UUID만 포함할 수 있습니다.");
+    }
 
-      // 요청된 모든 리소스 ID에 대해 결과를 보장 (없으면 0)
-      const result: Record<string, number> = {};
-      for (const id of resourceIds) {
-        result[id] = counts[id] ?? 0;
-      }
+    const store = dependencies.getViewCountStore(c);
+    const counts = await store.getViewCounts(resourceType, resourceIds);
 
-      return ok(c, result);
-    }),
-  );
+    // 요청된 모든 리소스 ID에 대해 결과를 보장 (없으면 0)
+    const result: Record<string, number> = {};
+    for (const id of resourceIds) {
+      result[id] = counts[id] ?? 0;
+    }
+
+    const response = ok(c, result);
+    response.headers.set("Cache-Control", VIEW_COUNTS_CACHE_CONTROL);
+    return response;
+  });
 };
