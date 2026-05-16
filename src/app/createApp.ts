@@ -33,6 +33,7 @@ const API_VERSION =
 const healthCheckSchema = z.object({
   service: z.enum([
     "d1",
+    "view_counts",
     "r2",
     "r2_presign",
     "durable_object",

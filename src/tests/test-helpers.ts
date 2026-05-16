@@ -19,6 +19,9 @@ import type {
   UserEntity,
 } from "../lib/services/types";
 import type { OpenAPIDocument } from "../lib/openapi/merge";
+import type {
+  ViewCountStore,
+} from "../lib/views/view-counts";
 
 export const IDs = {
   generation: "10000000-0000-4000-8000-000000000001",
@@ -392,7 +395,13 @@ export const createTestApp = (input: {
   readR2TotalUsageBytes?: () => Promise<number> | number;
   getAuthOpenApiSchema?: () => Promise<OpenAPIDocument>;
   isDocsEnabled?: boolean;
+  viewCountStore?: ViewCountStore;
 }) => {
+  const noopViewCountStore: ViewCountStore = {
+    recordView: async () => undefined,
+    getViewCounts: async () => ({}),
+  };
+
   return createApp({
     /**
      * resolveActor 값을 조회하거나 입력을 가공해 필요한 결과를 생성합니다.
@@ -423,6 +432,7 @@ export const createTestApp = (input: {
     isDocsEnabled:
       /** createApp 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () =>
         input.isDocsEnabled ?? true,
+    getViewCountStore: () => input.viewCountStore ?? noopViewCountStore,
   });
 };
 

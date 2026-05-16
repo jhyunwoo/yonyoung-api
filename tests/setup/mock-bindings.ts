@@ -1,22 +1,62 @@
 import type { AppBindings } from "../../src/types/honoAppType";
 
-const createMockD1PreparedStatement = (): D1PreparedStatement => {
+type ViewCountRow = {
+  resourceType: string;
+  resourceId: string;
+  viewCount: number;
+};
+
+const createMockD1PreparedStatement = (
+  query: string,
+  viewCounts: Map<string, ViewCountRow>,
+): D1PreparedStatement => {
+  const normalizedQuery = query.replace(/\s+/g, " ").trim().toLowerCase();
+  let boundValues: unknown[] = [];
+  const createKey = (resourceType: string, resourceId: string) =>
+    `${resourceType}:${resourceId}`;
+
   const prepared = {
-    bind: (..._values: unknown[]) => prepared as unknown as D1PreparedStatement,
+    bind: (...values: unknown[]) => {
+      boundValues = values;
+      return prepared as unknown as D1PreparedStatement;
+    },
     first: async <T = Record<string, unknown>>() =>
       ({ result: 1 } as unknown as T),
-    run: async <T = Record<string, unknown>>() =>
-      ({
-        success: true,
-        meta: { duration: 0, rows_read: 0, rows_written: 0 },
-        results: [] as T[],
-      } as unknown as D1Result<T>),
-    all: async <T = Record<string, unknown>>() =>
-      ({
-        success: true,
-        meta: { duration: 0, rows_read: 0, rows_written: 0 },
-        results: [] as T[],
-      } as unknown as D1Result<T>),
+    run: async <T = Record<string, unknown>>() => {
+      if (normalizedQuery.startsWith("insert into view_counts")) {
+        const [resourceType, resourceId] = boundValues as [string, string];
+        const key = createKey(resourceType, resourceId);
+        const existing = viewCounts.get(key);
+        viewCounts.set(key, {
+          resourceType,
+          resourceId,
+          viewCount: (existing?.viewCount ?? 0) + 1,
+        });
+      }
+
+      if (normalizedQuery.startsWith("delete from view_counts")) {
+        const [resourceType, resourceId] = boundValues as [string, string];
+        viewCounts.delete(createKey(resourceType, resourceId));
+      }
+
+      return createMockD1Result<T>();
+    },
+    all: async <T = Record<string, unknown>>() => {
+      if (normalizedQuery.includes("from view_counts")) {
+        const [resourceType, ...resourceIds] = boundValues as string[];
+        const results = resourceIds
+          .map((resourceId) => viewCounts.get(createKey(resourceType, resourceId)))
+          .filter((row): row is ViewCountRow => Boolean(row))
+          .map((row) => ({
+            resource_id: row.resourceId,
+            view_count: row.viewCount,
+          }));
+
+        return createMockD1Result(results as T[]);
+      }
+
+      return createMockD1Result<T>();
+    },
     raw: async <T = unknown[]>(options?: { columnNames?: boolean }) => {
       if (options?.columnNames) {
         return ([[]] as unknown) as [string[], ...T[]];
@@ -38,15 +78,16 @@ const createMockD1Result = <T>(results: T[] = []): D1Result<T> => {
 };
 
 export const createMockD1Database = (): D1Database => {
+  const viewCounts = new Map<string, ViewCountRow>();
   const database = {
-    prepare: (_query: string) => createMockD1PreparedStatement(),
+    prepare: (query: string) => createMockD1PreparedStatement(query, viewCounts),
     batch: async <T = unknown>(_statements: D1PreparedStatement[]) =>
       [createMockD1Result<T>()],
     exec: async (_query: string) => ({ count: 0, duration: 0 }),
     dump: async () => new ArrayBuffer(0),
     withSession: (_bookmark?: D1SessionBookmark | D1SessionConstraint) =>
       ({
-        prepare: (_query: string) => createMockD1PreparedStatement(),
+        prepare: (query: string) => createMockD1PreparedStatement(query, viewCounts),
         batch: async <T = unknown>(_statements: D1PreparedStatement[]) =>
           [createMockD1Result<T>()],
         getBookmark: () => "bookmark",

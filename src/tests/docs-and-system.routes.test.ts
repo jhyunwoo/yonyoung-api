@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import packageJson from "../../package.json";
+import { createMockD1Database } from "../../tests/setup/mock-bindings";
 import { createTestApp, expectErrorCode, readJson } from "./test-helpers";
 
 describe("docs and system routes", /** describe 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => {
@@ -7,12 +8,7 @@ describe("docs and system routes", /** describe 실행 과정에서 필요한 �
     const storage = new Map<string, Uint8Array>();
 
     return {
-      db: {
-        prepare: () => ({
-          first: async () => ({ result: 1 }),
-        }),
-        batch: async () => [],
-      } as unknown as D1Database,
+      db: createMockD1Database(),
       r2: {
         put: async (key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | Blob) => {
           if (typeof value === "string") {
@@ -92,6 +88,11 @@ describe("docs and system routes", /** describe 실행 과정에서 필요한 �
     expect(
       body.checks.some(
         (check) => check.service === "d1" && check.status === "healthy",
+      ),
+    ).toBe(true);
+    expect(
+      body.checks.some(
+        (check) => check.service === "view_counts" && check.status === "healthy",
       ),
     ).toBe(true);
     expect(

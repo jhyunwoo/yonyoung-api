@@ -307,6 +307,26 @@ export const exhibitions = sqliteTable(
   ],
 );
 
+export const viewCounts = sqliteTable(
+  "view_counts",
+  {
+    resourceType: text("resource_type").notNull(),
+    resourceId: text("resource_id").notNull(),
+    viewCount: integer("view_count").default(0).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(nowTimestamp)
+      .notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .default(nowTimestamp)
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.resourceType, table.resourceId] }),
+    index("view_counts_resource_type_idx").on(table.resourceType),
+  ],
+);
+
 export const exhibitionImages = sqliteTable(
   "exhibition_images",
   {

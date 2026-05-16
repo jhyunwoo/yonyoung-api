@@ -14,6 +14,10 @@ import { resolveDocsEnabled } from "../config/runtime-env";
 import { createD1SequentialSession, resolveD1SessionMode } from "../db/d1-session";
 import { createRetryingD1Database } from "../db/d1-client";
 import { readR2TotalUsageBytes } from "../storage/usage";
+import {
+  createD1ViewCountStore,
+  type ViewCountStore,
+} from "../views/view-counts";
 
 export type ResolveActor = (
   c: Context<HonoAppType>,
@@ -40,6 +44,25 @@ export type AppDependencies = {
   readR2TotalUsageBytes: ReadR2TotalUsageBytes;
   getAuthOpenApiSchema: GetAuthOpenApiSchema;
   isDocsEnabled: IsDocsEnabled;
+  getViewCountStore: (c: Context<HonoAppType>) => ViewCountStore;
+};
+
+const createRequestDatabase = (c: Context<HonoAppType>) => {
+  const database = resolveD1Database(c.env);
+  const sessionMode = resolveD1SessionMode(c.env.D1_SESSION_CONSISTENCY);
+  const session = createD1SequentialSession(database, {
+    mode: sessionMode,
+  });
+
+  const retryEnabled = parseBooleanEnv(c.env.D1_WRITE_RETRY_ENABLED, true);
+  return createRetryingD1Database(session.database, {
+    enabled: retryEnabled,
+    options: {
+      maxRetries: parseNumberEnv(c.env.D1_WRITE_RETRY_MAX_RETRIES, 2),
+      baseDelayMs: parseNumberEnv(c.env.D1_WRITE_RETRY_BASE_DELAY_MS, 25),
+      maxDelayMs: parseNumberEnv(c.env.D1_WRITE_RETRY_MAX_DELAY_MS, 500),
+    },
+  });
 };
 
 export const createDefaultDependencies = (): AppDependencies => ({
@@ -51,28 +74,13 @@ export const createDefaultDependencies = (): AppDependencies => ({
       return cached;
     }
 
-    const database = resolveD1Database(c.env);
-    const sessionMode = resolveD1SessionMode(c.env.D1_SESSION_CONSISTENCY);
-    const session = createD1SequentialSession(database, {
-      mode: sessionMode,
-    });
-
-    const retryEnabled = parseBooleanEnv(c.env.D1_WRITE_RETRY_ENABLED, true);
-    const databaseWithRetry = createRetryingD1Database(session.database, {
-      enabled: retryEnabled,
-      options: {
-        maxRetries: parseNumberEnv(c.env.D1_WRITE_RETRY_MAX_RETRIES, 2),
-        baseDelayMs: parseNumberEnv(c.env.D1_WRITE_RETRY_BASE_DELAY_MS, 25),
-        maxDelayMs: parseNumberEnv(c.env.D1_WRITE_RETRY_MAX_DELAY_MS, 500),
-      },
-    });
-
-    const dataService = getDbDataService(databaseWithRetry as D1Database);
+    const dataService = getDbDataService(createRequestDatabase(c) as D1Database);
     c.set("dataService", dataService);
     return dataService;
   },
   getPresignService: (c) => createR2PresignService(c.env),
   readR2TotalUsageBytes: (c) => readR2TotalUsageBytes(resolveR2Bucket(c.env)),
+  getViewCountStore: (c) => createD1ViewCountStore(createRequestDatabase(c)),
   getAuthOpenApiSchema: async (c) => {
     const database = resolveD1Database(c.env);
     const auth = createAuth(database, c.env);
