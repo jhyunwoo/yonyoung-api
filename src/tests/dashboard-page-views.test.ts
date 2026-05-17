@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { createApp } from "../src/app";
 import { createDataServiceMock, createTestApp, readJson } from "./test-helpers";
 import { DashboardPageViewStatsEntity } from "../src/lib/services/types";
 
