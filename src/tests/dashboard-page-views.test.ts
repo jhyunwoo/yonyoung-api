@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDataServiceMock, createTestApp, readJson } from "./test-helpers";
-import { DashboardPageViewStatsEntity } from "../src/lib/services/types";
+import { createDataServiceMock, createTestApp, readJson, createActor } from "./test-helpers";
+import { DashboardPageViewStatsEntity } from "../lib/services/types";
 
 describe("Dashboard Page View Stats API", () => {
   it("관리자는 대시보드 통계를 조회할 수 있다", async () => {
@@ -14,7 +14,7 @@ describe("Dashboard Page View Stats API", () => {
     const dataService = createDataServiceMock({ getDashboardPageViewStats });
     
     const app = createTestApp({
-      actor: { id: "admin-id", name: "Admin", role: "president" },
+      actor: createActor("president", "admin-id"),
       dataService
     });
 
@@ -28,7 +28,7 @@ describe("Dashboard Page View Stats API", () => {
 
   it("일반 사용자는 대시보드 통계를 조회할 수 없다", async () => {
     const app = createTestApp({
-      actor: { id: "user-id", name: "User", role: "new_member" },
+      actor: createActor("new_member", "user-id"),
       dataService: createDataServiceMock()
     });
 

@@ -112,6 +112,7 @@ describe("page-views routes", () => {
         homeViews: 50,
         activityViews: 30,
         exhibitionViews: 20,
+        noticeViews: 0,
         topActivities: [{ resourceId: "act-1", count: 10 }],
         topExhibitions: [{ resourceId: "exh-1", count: 5 }],
         dailyTrend: [{ date: "2030-01-01", count: 12 }],
