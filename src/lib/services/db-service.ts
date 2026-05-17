@@ -4102,6 +4102,78 @@ export const createDbDataService = (database: D1Database): DataService => {
 				})),
 			};
 		},
+
+		async getDashboardPageViewStats() {
+			// KST 기준 시간 계산
+			const now = new Date();
+			const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+			
+			const startOfTodayKST = new Date(kstNow);
+			startOfTodayKST.setUTCHours(0, 0, 0, 0);
+			const startOfTodayUTC = new Date(startOfTodayKST.getTime() - 9 * 60 * 60 * 1000);
+			
+			const startOfYesterdayUTC = new Date(startOfTodayUTC.getTime() - 24 * 60 * 60 * 1000);
+			
+			// 이번 주 월요일 00:00:00 (KST)
+			const dayOfWeek = kstNow.getUTCDay(); // 0: Sun, 1: Mon, ...
+			const diffToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+			const startOfThisWeekKST = new Date(startOfTodayKST.getTime() - diffToMonday * 24 * 60 * 60 * 1000);
+			const startOfThisWeekUTC = new Date(startOfThisWeekKST.getTime() - 9 * 60 * 60 * 1000);
+			
+			const startOfLastWeekUTC = new Date(startOfThisWeekUTC.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+			const [todayCount, yesterdayCount, thisWeekCount, lastWeekCount] = await Promise.all([
+				// Today
+				db.select({ count: sql<number>`count(*)` })
+					.from(pageViews)
+					.where(and(gte(pageViews.visitedAt, startOfTodayUTC))),
+				// Yesterday
+				db.select({ count: sql<number>`count(*)` })
+					.from(pageViews)
+					.where(and(
+						gte(pageViews.visitedAt, startOfYesterdayUTC),
+						sql`${pageViews.visitedAt} < ${startOfTodayUTC.getTime()}`
+					)),
+				// This Week
+				db.select({ count: sql<number>`count(*)` })
+					.from(pageViews)
+					.where(and(gte(pageViews.visitedAt, startOfThisWeekUTC))),
+				// Last Week
+				db.select({ count: sql<number>`count(*)` })
+					.from(pageViews)
+					.where(and(
+						gte(pageViews.visitedAt, startOfLastWeekUTC),
+						sql`${pageViews.visitedAt} < ${startOfThisWeekUTC.getTime()}`
+					)),
+			]);
+
+			const thirtyDaysAgo = new Date(startOfTodayUTC.getTime() - 30 * 24 * 60 * 60 * 1000);
+			const dailyTrendRows = await db
+				.select({
+					// visitedAt + 9시간을 하여 KST 날짜를 구함
+					date: sql<string>`date((${pageViews.visitedAt} + 32400000) / 1000, 'unixepoch')`,
+					count: sql<number>`count(*)`,
+				})
+				.from(pageViews)
+				.where(gte(pageViews.visitedAt, thirtyDaysAgo))
+				.groupBy(sql`date((${pageViews.visitedAt} + 32400000) / 1000, 'unixepoch')`)
+				.orderBy(sql`date((${pageViews.visitedAt} + 32400000) / 1000, 'unixepoch')`);
+
+			return {
+				today: {
+					count: Number(todayCount[0]?.count) || 0,
+					prevCount: Number(yesterdayCount[0]?.count) || 0,
+				},
+				thisWeek: {
+					count: Number(thisWeekCount[0]?.count) || 0,
+					prevCount: Number(lastWeekCount[0]?.count) || 0,
+				},
+				dailyTrend: dailyTrendRows.map(row => ({
+					date: row.date,
+					count: Number(row.count) || 0,
+				})),
+			};
+		},
 		/**
 		 * deleteUser 대상 리소스를 정리하거나 제거하는 처리를 수행합니다.
 		 * @param id 대상을 식별하기 위한 ID 값입니다.

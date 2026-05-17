@@ -276,9 +276,25 @@ export type PageViewStatsEntity = {
   homeViews: number;
   activityViews: number;
   exhibitionViews: number;
+  noticeViews: number;
   topActivities: Array<{ resourceId: string; count: number }>;
   topExhibitions: Array<{ resourceId: string; count: number }>;
   dailyTrend: Array<{ date: string; count: number }>;
+};
+
+export type DashboardPageViewStatsEntity = {
+  today: {
+    count: number;
+    prevCount: number; // yesterday
+  };
+  thisWeek: {
+    count: number;
+    prevCount: number; // last week
+  };
+  dailyTrend: Array<{
+    date: string;
+    count: number;
+  }>;
 };
 
 export type DataService = {
@@ -603,6 +619,7 @@ export type DataService = {
   getAdminDashboardStats: (generationSortOrder: number | null) => Promise<AdminDashboardStatsEntity>;
   recordPageView: (pageType: string, resourceId: string | undefined) => Promise<void>;
   getPageViewStats: () => Promise<PageViewStatsEntity>;
+  getDashboardPageViewStats: () => Promise<DashboardPageViewStatsEntity>;
   deleteUser: (id: string) => Promise<boolean>;
 };
 

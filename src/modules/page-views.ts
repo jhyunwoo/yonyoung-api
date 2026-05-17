@@ -1,5 +1,6 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import {
+  ApiDashboardPageViewStatsSchema,
   ApiPageViewStatsSchema,
   ApiRecordPageViewRequestSchema,
 } from "../lib/openapi/schemas";
@@ -46,6 +47,19 @@ const getPageViewStatsRoute = createRoute({
   security: [{ cookieAuth: [] }],
   responses: {
     200: dataResponse(ApiPageViewStatsSchema, "방문 통계 조회 성공"),
+    401: errorResponses[401],
+    403: errorResponses[403],
+  },
+});
+
+const getDashboardPageViewStatsRoute = createRoute({
+  method: "get",
+  path: "/api/admin/page-views/dashboard",
+  tags: ["Dashboard"],
+  operationId: "getDashboardPageViewStats",
+  security: [{ cookieAuth: [] }],
+  responses: {
+    200: dataResponse(ApiDashboardPageViewStatsSchema, "대시보드 방문 통계 조회 성공"),
     401: errorResponses[401],
     403: errorResponses[403],
   },
@@ -107,6 +121,20 @@ export const registerPageViewRoutes = (
     }
 
     const stats = await dependencies.getDataService(c).getPageViewStats();
+    return ok(c, stats);
+  });
+
+  app.openapi(getDashboardPageViewStatsRoute, async (c): Promise<any> => {
+    const actorResult = await requireActor(c, dependencies);
+    if ("response" in actorResult) {
+      return actorResult.response;
+    }
+
+    if (!can(actorResult.actor.role, "user", "read")) {
+      return forbidden(c);
+    }
+
+    const stats = await dependencies.getDataService(c).getDashboardPageViewStats();
     return ok(c, stats);
   });
 };

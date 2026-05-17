@@ -2223,6 +2223,7 @@ export const ApiPageViewStatsSchema = z
     homeViews: z.number().int().nonnegative().openapi({ description: "홈 방문 수" }),
     activityViews: z.number().int().nonnegative().openapi({ description: "활동 방문 수" }),
     exhibitionViews: z.number().int().nonnegative().openapi({ description: "전시 방문 수" }),
+    noticeViews: z.number().int().nonnegative().openapi({ description: "공지 방문 수" }),
     topActivities: z.array(
       z.object({
         resourceId: z.string(),
@@ -2243,6 +2244,25 @@ export const ApiPageViewStatsSchema = z
     ).openapi({ description: "최근 30일 일별 방문 추세" }),
   })
   .openapi("ApiPageViewStats");
+
+export const ApiDashboardPageViewStatsSchema = z
+  .object({
+    today: z.object({
+      count: z.number().int().nonnegative().openapi({ description: "오늘 방문 수" }),
+      prevCount: z.number().int().nonnegative().openapi({ description: "어제 방문 수" }),
+    }),
+    thisWeek: z.object({
+      count: z.number().int().nonnegative().openapi({ description: "이번 주 방문 수" }),
+      prevCount: z.number().int().nonnegative().openapi({ description: "지난 주 방문 수" }),
+    }),
+    dailyTrend: z.array(
+      z.object({
+        date: z.string(),
+        count: z.number().int().nonnegative(),
+      })
+    ).openapi({ description: "최근 30일 일별 방문 추세" }),
+  })
+  .openapi("ApiDashboardPageViewStats");
 
 export const ApiOpenApiDocumentSchema = z
   .object({
