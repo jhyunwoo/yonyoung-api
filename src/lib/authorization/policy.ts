@@ -123,7 +123,7 @@ const permissionMatrix: PermissionMatrix = {
     market: { create: true, read: true, update: true, delete: true },
     exhibition: { ...readOnly },
     linktree: { ...readOnly },
-    user: { ...noAccess },
+    user: { ...readOnly },
   },
   unverified: {
     generation: { ...noAccess },

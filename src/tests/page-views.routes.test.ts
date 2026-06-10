@@ -161,7 +161,7 @@ describe("page-views routes", () => {
 
     it("권한이 없는 사용자는 통계를 조회할 수 없다", async () => {
       const app = createTestApp({
-        actor: createActor("regular_member", IDs.member),
+        actor: createActor("new_member", IDs.member),
         dataService: createDataServiceMock(),
       });
 
