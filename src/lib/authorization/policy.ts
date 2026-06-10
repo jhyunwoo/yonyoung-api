@@ -105,7 +105,7 @@ const permissionMatrix: PermissionMatrix = {
     market: { create: true, read: true, update: true, delete: true },
     exhibition: { ...readOnly },
     linktree: { ...readOnly },
-    user: { ...noAccess },
+    user: { ...readOnly },
   },
   associate_member: {
     generation: { ...readOnly },
@@ -114,7 +114,7 @@ const permissionMatrix: PermissionMatrix = {
     market: { create: true, read: true, update: true, delete: true },
     exhibition: { ...readOnly },
     linktree: { ...readOnly },
-    user: { ...noAccess },
+    user: { ...readOnly },
   },
   regular_member: {
     generation: { ...readOnly },

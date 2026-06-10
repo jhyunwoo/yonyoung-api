@@ -26,9 +26,9 @@ describe("Dashboard Page View Stats API", () => {
     expect(getDashboardPageViewStats).toHaveBeenCalled();
   });
 
-  it("일반 사용자는 대시보드 통계를 조회할 수 없다", async () => {
+  it("인증되지 않은 사용자는 대시보드 통계를 조회할 수 없다", async () => {
     const app = createTestApp({
-      actor: createActor("new_member", "user-id"),
+      actor: createActor("unverified", "user-id"),
       dataService: createDataServiceMock()
     });
 

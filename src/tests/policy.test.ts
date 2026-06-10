@@ -47,8 +47,10 @@ describe("authorization policy", /** describe 실행 과정에서 필요한 연�
     expect(can("new_member", "activity", "read")).toBe(true);
     expect(can("new_member", "activity", "create")).toBe(false);
     expect(can("new_member", "activity", "update")).toBe(false);
+    expect(can("new_member", "user", "read")).toBe(true);
     expect(can("associate_member", "activity", "create")).toBe(false);
     expect(can("associate_member", "notice", "create")).toBe(false);
+    expect(can("associate_member", "user", "read")).toBe(true);
     expect(can("regular_member", "notice", "read")).toBe(true);
     expect(can("regular_member", "activity", "update")).toBe(false);
     expect(can("regular_member", "user", "read")).toBe(true);

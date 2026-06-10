@@ -124,7 +124,7 @@ describe("dashboard routes", () => {
 
   it("GET /api/admin/dashboard는 권한 없는 역할에 403을 반환한다", async () => {
     const app = createTestApp({
-      actor: createActor("new_member", IDs.member),
+      actor: createActor("unverified", IDs.member),
       dataService: createDataServiceMock({
         getAdminDashboardStats: fn(async () => ({
           usersTotal: 0,
