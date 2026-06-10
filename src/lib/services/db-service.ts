@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { DEFAULT_SITE_SETTINGS } from "../../shared/api-contracts";
 import createDB from "../db";
 import {
@@ -4132,7 +4132,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 					.from(pageViews)
 					.where(and(
 						gte(pageViews.visitedAt, startOfYesterdayUTC),
-						sql`${pageViews.visitedAt} < ${startOfTodayUTC.getTime()}`
+						lt(pageViews.visitedAt, startOfTodayUTC)
 					)),
 				// This Week
 				db.select({ count: sql<number>`count(*)` })
@@ -4143,7 +4143,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 					.from(pageViews)
 					.where(and(
 						gte(pageViews.visitedAt, startOfLastWeekUTC),
-						sql`${pageViews.visitedAt} < ${startOfThisWeekUTC.getTime()}`
+						lt(pageViews.visitedAt, startOfThisWeekUTC)
 					)),
 			]);
 
