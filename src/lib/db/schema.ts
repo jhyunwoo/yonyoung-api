@@ -361,165 +361,6 @@ export const exhibitionImages = sqliteTable(
   ],
 );
 
-export const generationNotices = sqliteTable(
-  "generation_notices",
-  {
-    id: text("id").primaryKey(),
-    generationId: text("generation_id")
-      .notNull()
-      .references(() => generations.id, { onDelete: "cascade" }),
-    title: text("title").notNull(),
-    content: text("content").notNull(),
-    imageUrls: text("image_urls").default("[]").notNull(),
-    authorId: text("author_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
-      .default(nowTimestamp)
-      .notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-      .default(nowTimestamp)
-      .$onUpdate(() => new Date())
-      .notNull(),
-    deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
-  },
-  (table) => [
-    index("generation_notices_generation_id_idx").on(table.generationId),
-    index("generation_notices_author_id_idx").on(table.authorId),
-    index("generation_notices_created_at_idx").on(table.createdAt),
-  ],
-);
-
-export const globalNotices = sqliteTable(
-  "global_notices",
-  {
-    id: text("id").primaryKey(),
-    title: text("title").notNull(),
-    content: text("content").notNull(),
-    imageUrls: text("image_urls").default("[]").notNull(),
-    authorId: text("author_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
-      .default(nowTimestamp)
-      .notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-      .default(nowTimestamp)
-      .$onUpdate(() => new Date())
-      .notNull(),
-    deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
-  },
-  (table) => [
-    index("global_notices_author_id_idx").on(table.authorId),
-    index("global_notices_created_at_idx").on(table.createdAt),
-  ],
-);
-
-export const marketItems = sqliteTable(
-  "market_items",
-  {
-    id: text("id").primaryKey(),
-    sellerId: text("seller_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    manufacturer: text("manufacturer"),
-    productCode: text("product_code"),
-    conditionGrade: text("condition_grade"),
-    description: text("description"),
-    price: integer("price").notNull(),
-    status: text("status").default("selling").notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
-      .default(nowTimestamp)
-      .notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-      .default(nowTimestamp)
-      .$onUpdate(() => new Date())
-      .notNull(),
-    deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
-  },
-  (table) => [
-    index("market_items_status_created_idx").on(
-      table.status,
-      table.createdAt,
-      table.deletedAt,
-    ),
-    index("market_items_seller_deleted_idx").on(table.sellerId, table.deletedAt),
-  ],
-);
-
-export const marketItemImages = sqliteTable(
-  "market_item_images",
-  {
-    id: text("id").primaryKey(),
-    itemId: text("item_id")
-      .notNull()
-      .references(() => marketItems.id, { onDelete: "cascade" }),
-    imageUrl: text("image_url").notNull(),
-    sortOrder: integer("sort_order").default(0).notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
-      .default(nowTimestamp)
-      .notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-      .default(nowTimestamp)
-      .$onUpdate(() => new Date())
-      .notNull(),
-    deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
-  },
-  (table) => [index("market_item_images_item_sort_idx").on(table.itemId, table.sortOrder)],
-);
-
-export const marketComments = sqliteTable(
-  "market_comments",
-  {
-    id: text("id").primaryKey(),
-    itemId: text("item_id")
-      .notNull()
-      .references(() => marketItems.id, { onDelete: "cascade" }),
-    authorId: text("author_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    content: text("content").notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
-      .default(nowTimestamp)
-      .notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-      .default(nowTimestamp)
-      .$onUpdate(() => new Date())
-      .notNull(),
-    deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
-  },
-  (table) => [
-    index("market_comments_item_created_idx").on(
-      table.itemId,
-      table.createdAt,
-      table.deletedAt,
-    ),
-    index("market_comments_author_deleted_idx").on(table.authorId, table.deletedAt),
-  ],
-);
-
-export const marketPushSubscriptions = sqliteTable(
-  "market_push_subscriptions",
-  {
-    id: text("id").primaryKey(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    endpoint: text("endpoint").notNull().unique(),
-    p256dh: text("p256dh").notNull(),
-    auth: text("auth").notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
-      .default(nowTimestamp)
-      .notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-      .default(nowTimestamp)
-      .$onUpdate(() => new Date())
-      .notNull(),
-  },
-  (table) => [index("market_push_subscriptions_user_idx").on(table.userId)],
-);
-
 export const linktree = sqliteTable("linktree", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -599,6 +440,37 @@ export const recruitingPlans = sqliteTable("recruiting_plans", {
     .notNull(),
 });
 
+export const attachments = sqliteTable(
+  "attachments",
+  {
+    id: text("id").primaryKey(),
+    // "activity" | "site_donate"
+    scope: text("scope").notNull(),
+    // scope=activity면 활동 UUID, site_donate면 null
+    resourceId: text("resource_id"),
+    title: text("title").notNull(),
+    // 파일 첨부와 외부 링크 중 정확히 하나만 사용한다 (파일이면 file_* 채움, 링크면 link_url 채움)
+    fileUrl: text("file_url"),
+    fileName: text("file_name"),
+    fileSize: integer("file_size"),
+    mimeType: text("mime_type"),
+    linkUrl: text("link_url"),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(nowTimestamp)
+      .notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .default(nowTimestamp)
+      .$onUpdate(() => new Date())
+      .notNull(),
+    deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    index("attachments_scope_resource_idx").on(table.scope, table.resourceId),
+    index("attachments_sort_order_idx").on(table.sortOrder),
+  ],
+);
+
 export const auditLogs = sqliteTable(
   "audit_logs",
   {
@@ -626,7 +498,6 @@ export const generationsRelations = relations(generations, /** relations 실행 
   userGenerations: many(userGenerations),
   activities: many(activities),
   exhibitions: many(exhibitions),
-  notices: many(generationNotices),
 }));
 
 export const userRelations = relations(user, /** relations 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param { many, one } 함수 로직에서 사용하는 입력값입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ ({ many, one }) => ({
@@ -637,11 +508,6 @@ export const userRelations = relations(user, /** relations 실행 과정에서 �
   generationLinks: many(userGenerations),
   sessions: many(session),
   accounts: many(account),
-  generationNotices: many(generationNotices),
-  globalNotices: many(globalNotices),
-  marketItems: many(marketItems),
-  marketComments: many(marketComments),
-  marketPushSubscriptions: many(marketPushSubscriptions),
 }));
 
 export const userGenerationsRelations = relations(
@@ -717,27 +583,6 @@ export const exhibitionImagesRelations = relations(
   }),
 );
 
-export const generationNoticesRelations = relations(
-  generationNotices,
-  ({ one }) => ({
-    generation: one(generations, {
-      fields: [generationNotices.generationId],
-      references: [generations.id],
-    }),
-    author: one(user, {
-      fields: [generationNotices.authorId],
-      references: [user.id],
-    }),
-  }),
-);
-
-export const globalNoticesRelations = relations(globalNotices, ({ one }) => ({
-  author: one(user, {
-    fields: [globalNotices.authorId],
-    references: [user.id],
-  }),
-}));
-
 export const linktreeRelations = relations(linktree, /** relations 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param { many } 함수 로직에서 사용하는 입력값입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ ({ many }) => ({
   items: many(linktreeItems),
 }));
@@ -748,43 +593,6 @@ export const linktreeItemsRelations = relations(linktreeItems, /** relations 실
     references: [linktree.id],
   }),
 }));
-
-export const marketItemsRelations = relations(marketItems, ({ many, one }) => ({
-  seller: one(user, {
-    fields: [marketItems.sellerId],
-    references: [user.id],
-  }),
-  images: many(marketItemImages),
-  comments: many(marketComments),
-}));
-
-export const marketItemImagesRelations = relations(marketItemImages, ({ one }) => ({
-  item: one(marketItems, {
-    fields: [marketItemImages.itemId],
-    references: [marketItems.id],
-  }),
-}));
-
-export const marketCommentsRelations = relations(marketComments, ({ one }) => ({
-  item: one(marketItems, {
-    fields: [marketComments.itemId],
-    references: [marketItems.id],
-  }),
-  author: one(user, {
-    fields: [marketComments.authorId],
-    references: [user.id],
-  }),
-}));
-
-export const marketPushSubscriptionsRelations = relations(
-  marketPushSubscriptions,
-  ({ one }) => ({
-    user: one(user, {
-      fields: [marketPushSubscriptions.userId],
-      references: [user.id],
-    }),
-  }),
-);
 
 export const pageViews = sqliteTable(
   "page_views",

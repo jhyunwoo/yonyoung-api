@@ -5,11 +5,10 @@ import type { Actor, Role } from "../lib/authorization/types";
 import type {
   ActivityEntity,
   ActivityImageEntity,
+  AttachmentEntity,
   DataService,
   ExhibitionEntity,
   ExhibitionImageEntity,
-  GenerationNoticeEntity,
-  GlobalNoticeEntity,
   GenerationEntity,
   LinktreeEntity,
   LinktreeItemEntity,
@@ -30,10 +29,9 @@ export const IDs = {
   activityImage: "21000000-0000-4000-8000-000000000001",
   exhibition: "40000000-0000-4000-8000-000000000001",
   exhibitionImage: "41000000-0000-4000-8000-000000000001",
-  generationNotice: "42000000-0000-4000-8000-000000000001",
-  globalNotice: "43000000-0000-4000-8000-000000000001",
   linktree: "50000000-0000-4000-8000-000000000001",
   linktreeItem: "51000000-0000-4000-8000-000000000001",
+  attachment: "70000000-0000-4000-8000-000000000001",
   otherUuid: "90000000-0000-4000-8000-000000000001",
   member: "user-member-0001",
   otherUser: "user-member-0002",
@@ -202,46 +200,28 @@ export const createLinktree = (
   ...overrides,
 });
 
-export const createGenerationNotice = (
-  overrides: Partial<GenerationNoticeEntity> = {},
-): GenerationNoticeEntity => ({
-  id: IDs.generationNotice,
-  generationId: IDs.generation,
-  title: "기수 공지 제목",
-  content: "기수 공지 본문",
-  imageUrls: [],
-  author: {
-    id: IDs.manager,
-    name: "manager-name",
-    familyName: null,
-    givenName: null,
-    image: null,
-    role: "manager",
-  },
-  createdAt: BASE_DATE,
-  updatedAt: BASE_DATE,
-  updatedBy: null,
-  ...overrides,
-});
+/** presign이 발급하는 공개 미디어 URL 형식(/api/public/media/{path}/{actorId}/{slot}/{token})을 그대로 따른다 */
+export const buildManagedFileUrl = (
+  resourcePath: "site" | "activities",
+  actorId: string = IDs.president,
+): string =>
+  `https://api.yonyoung.example/api/public/media/${resourcePath}/${actorId}/file/11111111-1111-4111-8111-111111111111-report.pdf?sig=test-signature`;
 
-export const createGlobalNotice = (
-  overrides: Partial<GlobalNoticeEntity> = {},
-): GlobalNoticeEntity => ({
-  id: IDs.globalNotice,
-  title: "전체 공지 제목",
-  content: "전체 공지 본문",
-  imageUrls: [],
-  author: {
-    id: IDs.vicePresident,
-    name: "vice-name",
-    familyName: null,
-    givenName: null,
-    image: null,
-    role: "vice_president",
-  },
+export const createAttachment = (
+  overrides: Partial<AttachmentEntity> = {},
+): AttachmentEntity => ({
+  id: IDs.attachment,
+  scope: "site_donate",
+  resourceId: null,
+  title: "2026년 6월 회계 내역",
+  fileUrl: buildManagedFileUrl("site"),
+  fileName: "2026-06-회계내역.pdf",
+  fileSize: 1048576,
+  mimeType: "application/pdf",
+  linkUrl: null,
+  sortOrder: 0,
   createdAt: BASE_DATE,
   updatedAt: BASE_DATE,
-  updatedBy: null,
   ...overrides,
 });
 

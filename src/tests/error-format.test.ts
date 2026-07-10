@@ -61,10 +61,10 @@ describe("error response format", () => {
 
   it("잘못된 JSON 본문은 400 BAD_REQUEST로 처리되고 서버 오류로 승격되지 않는다", async () => {
     const app = createTestApp({
-      actor: createActor("regular_member"),
+      actor: createActor("vice_president"),
     });
 
-    const response = await app.request("/api/market/items", {
+    const response = await app.request("/api/attachments", {
       method: "POST",
       headers: {
         "content-type": "application/json",

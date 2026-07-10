@@ -4,6 +4,8 @@ import { badRequest, forbidden, ok } from "../lib/http/response";
 import { parseBody } from "../lib/validation/request";
 import type { AppDependencies } from "../lib/services/dependencies";
 import { requireActor } from "../lib/http/authz";
+import { can } from "../lib/authorization/policy";
+import type { Role } from "../lib/authorization/types";
 import { dataResponse, errorResponses, jsonBody } from "../lib/openapi/responses";
 import {
   ApiSiteSettingsSchema,
@@ -12,8 +14,8 @@ import {
 
 type App = OpenAPIHono<HonoAppType>;
 
-const isPrivilegedActor = (role: string): boolean =>
-  role === "president" || role === "vice_president";
+const isPrivilegedActor = (role: Role): boolean =>
+  can(role, "site_setting", "update");
 
 const normalizeInstagramId = (value: string): string => {
   return value.trim().replace(/^@+/, "");

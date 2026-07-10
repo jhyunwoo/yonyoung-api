@@ -35,54 +35,48 @@ import {
   ApiPresignResponseSchema,
 } from "../lib/openapi/schemas";
 import {
+  ALLOWED_ATTACHMENT_CONTENT_TYPES,
   ALLOWED_IMAGE_CONTENT_TYPES,
   UPLOAD_LIMITS,
   parseManagedObjectKey,
 } from "../lib/storage/presign";
+import type { ManagedUploadResourcePath, ManagedUploadSlot } from "../lib/storage/presign";
 import { R2_STORAGE_LIMIT_BYTES } from "../lib/storage/usage";
 
 type App = OpenAPIHono<HonoAppType>;
-type ManagedResource = Extract<Resource, "activity" | "exhibition" | "notice" | "market">;
-type UploadResourcePath =
-  | "activities"
-  | "exhibitions"
-  | "users"
-  | "notices"
-  | "market";
-type UploadSlot = "cover" | "detail" | "profile" | "image";
+type ManagedResource = Extract<
+  Resource,
+  "activity" | "exhibition" | "site_setting"
+>;
+type UploadResourcePath = ManagedUploadResourcePath;
+type UploadSlot = ManagedUploadSlot;
 
 const canCreateOrUpdate = (role: Role, resource: Resource) => {
   return can(role, resource, "create") || can(role, resource, "update");
-};
-
-const resourceUploadPathMap: Record<ManagedResource, UploadResourcePath> = {
-  activity: "activities",
-  exhibition: "exhibitions",
-  notice: "notices",
-  market: "market",
 };
 
 const resourceByPath: Record<UploadResourcePath, Resource | "user"> = {
   activities: "activity",
   exhibitions: "exhibition",
   users: "user",
-  notices: "notice",
-  market: "market",
+  // notices 경로는 모집(recruiting) 이미지와 레거시 공지 이미지가 사용한다
+  notices: "site_setting",
+  site: "site_setting",
 };
-
-const isAllowedContentType = (contentType: string): boolean =>
-  ALLOWED_IMAGE_CONTENT_TYPES.includes(
-    contentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number],
-  );
 
 const validateUploadPayload = (
   input: { contentType: string; fileSize: number },
-  options: { maxFileSizeBytes: number },
+  options: {
+    maxFileSizeBytes: number;
+    allowedContentTypes?: readonly string[];
+  },
 ): { code: "unsupported_type" | "too_large"; message: string } | null => {
-  if (!isAllowedContentType(input.contentType)) {
+  const allowedContentTypes =
+    options.allowedContentTypes ?? ALLOWED_IMAGE_CONTENT_TYPES;
+  if (!allowedContentTypes.includes(input.contentType)) {
     return {
       code: "unsupported_type",
-      message: `지원하지 않는 이미지 형식입니다. (${ALLOWED_IMAGE_CONTENT_TYPES.join(", ")})`,
+      message: `지원하지 않는 파일 형식입니다. (${allowedContentTypes.join(", ")})`,
     };
   }
 
@@ -167,19 +161,28 @@ const ensureMultipartOwnership = (input: {
   return null;
 };
 
+type ResourcePresignRouteOptions = {
+  routePath: string;
+  operationId: string;
+  // 권한 판정에 사용할 정책 리소스
+  resource: ManagedResource;
+  // R2 objectKey의 최상위 경로
+  uploadResourcePath: UploadResourcePath;
+  slot: Exclude<UploadSlot, "profile">;
+  // 생략 시 이미지 형식만 허용
+  allowedContentTypes?: readonly string[];
+};
+
 const registerResourcePresignRoute = (
   app: App,
   dependencies: AppDependencies,
-  routePath: string,
-  operationId: string,
-  resource: ManagedResource,
-  slot: Exclude<UploadSlot, "profile">,
+  options: ResourcePresignRouteOptions,
 ) => {
   const route = createRoute({
     method: "post",
-    path: routePath,
+    path: options.routePath,
     tags: ["Uploads"],
-    operationId,
+    operationId: options.operationId,
     security: [{ cookieAuth: [] }],
     request: {
       body: jsonBody(ApiPresignRequestSchema, "Presigned URL 발급 요청"),
@@ -201,7 +204,7 @@ const registerResourcePresignRoute = (
       return actorResult.response;
     }
 
-    if (!canCreateOrUpdate(actorResult.actor.role, resource)) {
+    if (!canCreateOrUpdate(actorResult.actor.role, options.resource)) {
       return forbidden(c);
     }
 
@@ -212,6 +215,7 @@ const registerResourcePresignRoute = (
 
     const validation = validateUploadPayload(body.data, {
       maxFileSizeBytes: UPLOAD_LIMITS.maxSinglePartBytes,
+      allowedContentTypes: options.allowedContentTypes,
     });
     const validationResponse = readUploadValidationResponse(c, validation);
     if (validationResponse) {
@@ -230,8 +234,8 @@ const registerResourcePresignRoute = (
     try {
       const data = await dependencies.getPresignService(c).issuePresignedPutUrl({
         actorId: actorResult.actor.id,
-        resource: resourceUploadPathMap[resource],
-        slot,
+        resource: options.uploadResourcePath,
+        slot: options.slot,
         fileName: body.data.fileName,
         contentType: body.data.contentType,
         fileSize: body.data.fileSize,
@@ -252,16 +256,13 @@ const registerResourcePresignRoute = (
 const registerResourceMultipartInitRoute = (
   app: App,
   dependencies: AppDependencies,
-  routePath: string,
-  operationId: string,
-  resource: ManagedResource,
-  slot: Exclude<UploadSlot, "profile">,
+  options: ResourcePresignRouteOptions,
 ) => {
   const route = createRoute({
     method: "post",
-    path: routePath,
+    path: options.routePath,
     tags: ["Uploads"],
-    operationId,
+    operationId: options.operationId,
     security: [{ cookieAuth: [] }],
     request: {
       body: jsonBody(
@@ -289,7 +290,7 @@ const registerResourceMultipartInitRoute = (
       return actorResult.response;
     }
 
-    if (!canCreateOrUpdate(actorResult.actor.role, resource)) {
+    if (!canCreateOrUpdate(actorResult.actor.role, options.resource)) {
       return forbidden(c);
     }
 
@@ -300,6 +301,7 @@ const registerResourceMultipartInitRoute = (
 
     const validation = validateUploadPayload(body.data, {
       maxFileSizeBytes: UPLOAD_LIMITS.maxMultipartBytes,
+      allowedContentTypes: options.allowedContentTypes,
     });
     const validationResponse = readUploadValidationResponse(c, validation);
     if (validationResponse) {
@@ -328,8 +330,8 @@ const registerResourceMultipartInitRoute = (
     try {
       const data = await dependencies.getPresignService(c).initiateMultipartUpload({
         actorId: actorResult.actor.id,
-        resource: resourceUploadPathMap[resource],
-        slot,
+        resource: options.uploadResourcePath,
+        slot: options.slot,
         fileName: body.data.fileName,
         contentType: body.data.contentType,
         fileSize: body.data.fileSize,
@@ -467,111 +469,87 @@ export const registerUploadRoutes = (
   app: App,
   dependencies: AppDependencies,
 ) => {
-  registerResourcePresignRoute(
-    app,
-    dependencies,
-    "/api/activities/presign/cover",
-    "issueActivityCoverPresign",
-    "activity",
-    "cover",
-  );
-  registerResourcePresignRoute(
-    app,
-    dependencies,
-    "/api/activities/presign/detail",
-    "issueActivityDetailPresign",
-    "activity",
-    "detail",
-  );
-  registerResourcePresignRoute(
-    app,
-    dependencies,
-    "/api/exhibitions/presign/cover",
-    "issueExhibitionCoverPresign",
-    "exhibition",
-    "cover",
-  );
-  registerResourcePresignRoute(
-    app,
-    dependencies,
-    "/api/exhibitions/presign/detail",
-    "issueExhibitionDetailPresign",
-    "exhibition",
-    "detail",
-  );
-  registerResourcePresignRoute(
-    app,
-    dependencies,
-    "/api/notices/presign/image",
-    "issueNoticeImagePresign",
-    "notice",
-    "image",
-  );
-  registerResourcePresignRoute(
-    app,
-    dependencies,
-    "/api/recruiting/presign/image",
-    "issueRecruitingImagePresign",
-    "notice",
-    "image",
-  );
-  registerResourcePresignRoute(
-    app,
-    dependencies,
-    "/api/market/presign/image",
-    "issueMarketImagePresign",
-    "market",
-    "image",
-  );
+  registerResourcePresignRoute(app, dependencies, {
+    routePath: "/api/activities/presign/cover",
+    operationId: "issueActivityCoverPresign",
+    resource: "activity",
+    uploadResourcePath: "activities",
+    slot: "cover",
+  });
+  registerResourcePresignRoute(app, dependencies, {
+    routePath: "/api/activities/presign/detail",
+    operationId: "issueActivityDetailPresign",
+    resource: "activity",
+    uploadResourcePath: "activities",
+    slot: "detail",
+  });
+  registerResourcePresignRoute(app, dependencies, {
+    routePath: "/api/exhibitions/presign/cover",
+    operationId: "issueExhibitionCoverPresign",
+    resource: "exhibition",
+    uploadResourcePath: "exhibitions",
+    slot: "cover",
+  });
+  registerResourcePresignRoute(app, dependencies, {
+    routePath: "/api/exhibitions/presign/detail",
+    operationId: "issueExhibitionDetailPresign",
+    resource: "exhibition",
+    uploadResourcePath: "exhibitions",
+    slot: "detail",
+  });
+  registerResourcePresignRoute(app, dependencies, {
+    routePath: "/api/recruiting/presign/image",
+    operationId: "issueRecruitingImagePresign",
+    // 모집 계획 관리(회장/부회장)와 동일한 권한을 요구한다
+    resource: "site_setting",
+    uploadResourcePath: "notices",
+    slot: "image",
+  });
+  registerResourcePresignRoute(app, dependencies, {
+    routePath: "/api/activities/presign/file",
+    operationId: "issueActivityFilePresign",
+    resource: "activity",
+    uploadResourcePath: "activities",
+    slot: "file",
+    allowedContentTypes: ALLOWED_ATTACHMENT_CONTENT_TYPES,
+  });
+  registerResourcePresignRoute(app, dependencies, {
+    routePath: "/api/site/presign/file",
+    operationId: "issueSiteFilePresign",
+    resource: "site_setting",
+    uploadResourcePath: "site",
+    slot: "file",
+    allowedContentTypes: ALLOWED_ATTACHMENT_CONTENT_TYPES,
+  });
 
-  registerResourceMultipartInitRoute(
-    app,
-    dependencies,
-    "/api/activities/multipart/cover/init",
-    "initActivityCoverMultipartUpload",
-    "activity",
-    "cover",
-  );
-  registerResourceMultipartInitRoute(
-    app,
-    dependencies,
-    "/api/activities/multipart/detail/init",
-    "initActivityDetailMultipartUpload",
-    "activity",
-    "detail",
-  );
-  registerResourceMultipartInitRoute(
-    app,
-    dependencies,
-    "/api/exhibitions/multipart/cover/init",
-    "initExhibitionCoverMultipartUpload",
-    "exhibition",
-    "cover",
-  );
-  registerResourceMultipartInitRoute(
-    app,
-    dependencies,
-    "/api/exhibitions/multipart/detail/init",
-    "initExhibitionDetailMultipartUpload",
-    "exhibition",
-    "detail",
-  );
-  registerResourceMultipartInitRoute(
-    app,
-    dependencies,
-    "/api/notices/multipart/image/init",
-    "initNoticeImageMultipartUpload",
-    "notice",
-    "image",
-  );
-  registerResourceMultipartInitRoute(
-    app,
-    dependencies,
-    "/api/market/multipart/image/init",
-    "initMarketImageMultipartUpload",
-    "market",
-    "image",
-  );
+  registerResourceMultipartInitRoute(app, dependencies, {
+    routePath: "/api/activities/multipart/cover/init",
+    operationId: "initActivityCoverMultipartUpload",
+    resource: "activity",
+    uploadResourcePath: "activities",
+    slot: "cover",
+  });
+  registerResourceMultipartInitRoute(app, dependencies, {
+    routePath: "/api/activities/multipart/detail/init",
+    operationId: "initActivityDetailMultipartUpload",
+    resource: "activity",
+    uploadResourcePath: "activities",
+    slot: "detail",
+  });
+  registerResourceMultipartInitRoute(app, dependencies, {
+    routePath: "/api/exhibitions/multipart/cover/init",
+    operationId: "initExhibitionCoverMultipartUpload",
+    resource: "exhibition",
+    uploadResourcePath: "exhibitions",
+    slot: "cover",
+  });
+  registerResourceMultipartInitRoute(app, dependencies, {
+    routePath: "/api/exhibitions/multipart/detail/init",
+    operationId: "initExhibitionDetailMultipartUpload",
+    resource: "exhibition",
+    uploadResourcePath: "exhibitions",
+    slot: "detail",
+  });
 
   app.openapi(userProfilePresignRoute, async (c): Promise<any> => {
     const actorResult = await requireActor(c, dependencies);

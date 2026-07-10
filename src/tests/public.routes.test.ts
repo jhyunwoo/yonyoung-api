@@ -38,7 +38,7 @@ const createR2BucketMock = (object: R2ObjectBody | null): R2Bucket =>
 
 describe("public routes", () => {
   it("서명된 공개 미디어 URL로 이미지를 조회한다", async () => {
-    const objectKey = "market/user-member-0001/image/example-image.jpeg";
+    const objectKey = "notices/user-member-0001/image/example-image.jpeg";
     const publicUrl = await buildSignedPublicObjectUrl({
       baseUrl: "https://example.com",
       objectKey,
@@ -75,7 +75,7 @@ describe("public routes", () => {
   });
 
   it("R2 메타데이터의 content-type이 비어 있어도 파일 확장자로 복구한다", async () => {
-    const objectKey = "market/user-member-0001/image/example-image.jpeg";
+    const objectKey = "notices/user-member-0001/image/example-image.jpeg";
     const publicUrl = await buildSignedPublicObjectUrl({
       baseUrl: "https://example.com",
       objectKey,
@@ -103,7 +103,7 @@ describe("public routes", () => {
   });
 
   it("전용 공개 URL 시크릿이 추가되어도 기존 BETTER_AUTH_SECRET 서명을 허용한다", async () => {
-    const objectKey = "market/user-member-0001/image/example-image.jpeg";
+    const objectKey = "notices/user-member-0001/image/example-image.jpeg";
     const publicUrl = await buildSignedPublicObjectUrl({
       baseUrl: "https://example.com",
       objectKey,

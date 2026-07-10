@@ -26,6 +26,7 @@ import { sanitizeRichTextHtml } from "../lib/content/rich-text";
 import { sanitizeExhibitionRichText } from "../lib/content/exhibition-rich-text";
 import { createR2Client, resolveR2Bucket } from "../infra/r2/client";
 import {
+  ALLOWED_ATTACHMENT_CONTENT_TYPES,
   ALLOWED_IMAGE_CONTENT_TYPES,
   parseManagedObjectKey,
   resolvePublicObjectSigningSecrets,
@@ -65,18 +66,46 @@ const CONTENT_TYPE_BY_EXTENSION = {
   (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number]
 >;
 
+const ATTACHMENT_CONTENT_TYPE_BY_EXTENSION = {
+  pdf: "application/pdf",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xls: "application/vnd.ms-excel",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  hwp: "application/x-hwp",
+  hwpx: "application/vnd.hancom.hwpx",
+  zip: "application/zip",
+} satisfies Record<
+  string,
+  (typeof ALLOWED_ATTACHMENT_CONTENT_TYPES)[number]
+>;
+
+type ResolvedPublicMediaContentType = {
+  contentType: string;
+  // 문서류 첨부는 인라인 렌더링 대신 다운로드(Content-Disposition: attachment)로 응답한다
+  isAttachment: boolean;
+};
+
 const resolvePublicMediaContentType = (
   objectKey: string,
   metadataContentType: string | null | undefined,
-): (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number] | null => {
+): ResolvedPublicMediaContentType | null => {
   const normalizedContentType = metadataContentType?.trim().toLowerCase();
-  if (
-    normalizedContentType &&
-    ALLOWED_IMAGE_CONTENT_TYPES.includes(
-      normalizedContentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number],
-    )
-  ) {
-    return normalizedContentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number];
+  if (normalizedContentType) {
+    if (
+      ALLOWED_IMAGE_CONTENT_TYPES.includes(
+        normalizedContentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number],
+      )
+    ) {
+      return { contentType: normalizedContentType, isAttachment: false };
+    }
+
+    if (
+      ALLOWED_ATTACHMENT_CONTENT_TYPES.includes(
+        normalizedContentType as (typeof ALLOWED_ATTACHMENT_CONTENT_TYPES)[number],
+      )
+    ) {
+      return { contentType: normalizedContentType, isAttachment: true };
+    }
   }
 
   const fileName = objectKey.split("/").at(-1)?.toLowerCase() ?? "";
@@ -85,11 +114,34 @@ const resolvePublicMediaContentType = (
     return null;
   }
 
-  if (!(extension in CONTENT_TYPE_BY_EXTENSION)) {
-    return null;
+  if (extension in CONTENT_TYPE_BY_EXTENSION) {
+    return {
+      contentType:
+        CONTENT_TYPE_BY_EXTENSION[extension as keyof typeof CONTENT_TYPE_BY_EXTENSION],
+      isAttachment: false,
+    };
   }
 
-  return CONTENT_TYPE_BY_EXTENSION[extension as keyof typeof CONTENT_TYPE_BY_EXTENSION];
+  if (extension in ATTACHMENT_CONTENT_TYPE_BY_EXTENSION) {
+    return {
+      contentType:
+        ATTACHMENT_CONTENT_TYPE_BY_EXTENSION[
+          extension as keyof typeof ATTACHMENT_CONTENT_TYPE_BY_EXTENSION
+        ],
+      isAttachment: true,
+    };
+  }
+
+  return null;
+};
+
+// objectKey의 fileToken(`{uuid}-{safeFileName}`)에서 uuid 접두어를 제거해 다운로드 파일명을 만든다
+const buildAttachmentDownloadName = (fileToken: string): string => {
+  const stripped = fileToken.replace(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i,
+    "",
+  );
+  return stripped.length > 0 ? stripped : fileToken;
 };
 
 const listPublicActivitiesRoute = createRoute({
@@ -272,18 +324,26 @@ export const registerPublicRoutes = (
       return notFound(c);
     }
 
-    const contentType = resolvePublicMediaContentType(
+    const resolvedContentType = resolvePublicMediaContentType(
       objectKey,
       object.httpMetadata?.contentType,
     );
-    if (!contentType) {
+    if (!resolvedContentType) {
       return notFound(c);
     }
 
     const headers = new Headers();
     headers.set("Cache-Control", PUBLIC_MEDIA_CACHE_CONTROL);
-    headers.set("Content-Type", contentType);
+    headers.set("Content-Type", resolvedContentType.contentType);
     headers.set("X-Content-Type-Options", "nosniff");
+
+    if (resolvedContentType.isAttachment) {
+      const downloadName = buildAttachmentDownloadName(parsedObjectKey.fileToken);
+      headers.set(
+        "Content-Disposition",
+        `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
+      );
+    }
 
     if (object.httpEtag) {
       headers.set("ETag", object.httpEtag);

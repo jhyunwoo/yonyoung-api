@@ -28,12 +28,25 @@ export const ALLOWED_IMAGE_CONTENT_TYPES = [
   "image/heif",
 ] as const;
 
+export const ALLOWED_ATTACHMENT_CONTENT_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/x-hwp",
+  "application/haansofthwp",
+  "application/vnd.hancom.hwp",
+  "application/vnd.hancom.hwpx",
+  "application/zip",
+] as const;
+
 export const MANAGED_UPLOAD_RESOURCE_PATHS = [
   "activities",
   "exhibitions",
   "users",
+  // notices 경로는 모집(recruiting) 이미지와 레거시 공지 이미지 objectKey가 사용한다
   "notices",
-  "market",
+  "site",
 ] as const;
 
 export const MANAGED_UPLOAD_SLOTS = [
@@ -41,6 +54,7 @@ export const MANAGED_UPLOAD_SLOTS = [
   "detail",
   "profile",
   "image",
+  "file",
 ] as const;
 
 export type ManagedUploadResourcePath = (typeof MANAGED_UPLOAD_RESOURCE_PATHS)[number];
@@ -62,11 +76,11 @@ const LEGACY_PUBLIC_URL_SIGNING_SECRET_ENV_KEY = "BETTER_AUTH_SECRET";
 const SAFE_OBJECT_SEGMENT_PATTERN = /^[A-Za-z0-9._-]{1,160}$/;
 const SAFE_ACTOR_ID_PATTERN = /^[A-Za-z0-9_-]{1,120}$/;
 const SLOT_ALLOWLIST_BY_PATH: Record<ManagedUploadResourcePath, readonly ManagedUploadSlot[]> = {
-  activities: ["cover", "detail"],
+  activities: ["cover", "detail", "file"],
   exhibitions: ["cover", "detail"],
   users: ["profile"],
   notices: ["image"],
-  market: ["image"],
+  site: ["file"],
 };
 const textEncoder = new TextEncoder();
 

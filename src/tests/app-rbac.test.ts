@@ -71,34 +71,6 @@ const createUser = (
   updatedBy: null,
 });
 
-const createMarketItemEntity = (overrides: Partial<{
-  id: string;
-  sellerId: string;
-  status: "selling" | "reserved" | "sold";
-}> = {}) => ({
-  id: overrides.id ?? "88000000-0000-4000-8000-000000000001",
-  sellerId: overrides.sellerId ?? IDs.member,
-  name: "렌즈",
-  imageUrls: ["https://cdn.example.com/market/item.jpg"],
-  manufacturer: null,
-  productCode: null,
-  conditionGrade: null,
-  description: null,
-  price: 1000,
-  status: overrides.status ?? "selling",
-  seller: {
-    id: overrides.sellerId ?? IDs.member,
-    name: "seller-name",
-    familyName: null,
-    givenName: null,
-    image: null,
-    role: "regular_member",
-  },
-  createdAt: new Date(0),
-  updatedAt: new Date(0),
-  updatedBy: null,
-});
-
 /**
  * createDataServiceMock 생성/등록 절차를 수행해 시스템 상태를 갱신합니다.
  * @param overrides 대상을 식별하기 위한 ID 값입니다.
@@ -294,60 +266,6 @@ describe("RBAC routes", /** describe 실행 과정에서 필요한 연산을 수
     );
     expect(response.status).toBe(403);
     expect(deleteExhibitionImage).not.toHaveBeenCalled();
-  });
-
-  it("정회원은 market 판매글 생성이 가능하다", async () => {
-    const createMarketItem = vi.fn(async () =>
-      createMarketItemEntity({ sellerId: IDs.member }),
-    );
-    const app = createTestApp({
-      actor: createActor("regular_member", IDs.member),
-      dataService: createDataServiceMock({
-        createMarketItem,
-      }),
-    });
-
-    const response = await app.request("/api/market/items", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: "렌즈",
-        imageUrls: ["https://cdn.example.com/market/item.jpg"],
-        price: 1000,
-      }),
-    });
-
-    expect(response.status).toBe(201);
-    expect(createMarketItem).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sellerId: IDs.member,
-      }),
-    );
-  });
-
-  it("unverified는 market 판매글 생성이 불가하다", async () => {
-    const createMarketItem = vi.fn(async () =>
-      createMarketItemEntity({ sellerId: IDs.member }),
-    );
-    const app = createTestApp({
-      actor: createActor("unverified", IDs.member),
-      dataService: createDataServiceMock({
-        createMarketItem,
-      }),
-    });
-
-    const response = await app.request("/api/market/items", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: "렌즈",
-        imageUrls: ["https://cdn.example.com/market/item.jpg"],
-        price: 1000,
-      }),
-    });
-
-    expect(response.status).toBe(403);
-    expect(createMarketItem).not.toHaveBeenCalled();
   });
 
   it("부원의 users 목록 조회는 본인 1건만 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {

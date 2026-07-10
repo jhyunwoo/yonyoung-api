@@ -29,9 +29,6 @@ const runtimeEnvSchema = z
     PERF_ANALYTICS_ENABLED: stringBooleanSchema,
     PERF_ANALYTICS_SAMPLE_RATE: z.string().optional(),
     CSP_REPORT_ONLY: stringBooleanSchema,
-    VAPID_PUBLIC_KEY: z.string().optional(),
-    VAPID_PRIVATE_KEY: z.string().optional(),
-    VAPID_SUBJECT: z.string().optional(),
   })
   .passthrough();
 

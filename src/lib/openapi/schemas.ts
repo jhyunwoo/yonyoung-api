@@ -5,6 +5,7 @@ import {
 } from "../../shared/auth/profile";
 import { API_ERROR_CODES, DEFAULT_SITE_SETTINGS } from "../../shared/api-contracts";
 import {
+  ALLOWED_ATTACHMENT_CONTENT_TYPES,
   ALLOWED_IMAGE_CONTENT_TYPES,
   UPLOAD_LIMITS,
 } from "../storage/presign";
@@ -14,11 +15,8 @@ const EXAMPLE_PARENT_ID = "22222222-2222-4222-8222-222222222222";
 const EXAMPLE_IMAGE_ID = "33333333-3333-4333-8333-333333333333";
 const EXAMPLE_ITEM_ID = "44444444-4444-4444-8444-444444444444";
 const EXAMPLE_GENERATION_ID = "55555555-5555-4555-8555-555555555555";
-const EXAMPLE_NOTICE_ID = "66666666-6666-4666-8666-666666666666";
 const EXAMPLE_USER_ID = "OrYuGkpIFldOIkcrxLrwgzEegsLSJbrh";
 const EXAMPLE_AUDIT_ID = "77777777-7777-4777-8777-777777777777";
-const EXAMPLE_MARKET_ITEM_ID = "88888888-8888-4888-8888-888888888888";
-const EXAMPLE_MARKET_COMMENT_ID = "99999999-9999-4999-8999-999999999999";
 const EXAMPLE_TIMESTAMP_MS = 1735689600000;
 const EXAMPLE_TIMESTAMP_MS_END = 1738368000000;
 
@@ -150,31 +148,15 @@ export const ApiItemIdParamSchema = z
   })
   .openapi("ApiItemIdParam");
 
-export const ApiNoticeIdParamSchema = z
-  .object({
-    id: z.string().uuid().openapi({
-      description: "상위 리소스 UUID (기수)",
-      example: EXAMPLE_GENERATION_ID,
-    }),
-    noticeId: z.string().uuid().openapi({
-      description: "공지 UUID",
-      example: EXAMPLE_NOTICE_ID,
-    }),
-  })
-  .openapi("ApiNoticeIdParam");
-
 const ApiAuditResourceTypeSchema = z
   .enum([
     "generation",
     "activity",
     "exhibition",
-    "generation_notice",
-    "global_notice",
-    "market_item",
-    "market_comment",
     "linktree",
     "linktree_item",
     "user",
+    "attachment",
   ])
   .openapi("ApiAuditResourceType");
 
@@ -709,20 +691,186 @@ export const ApiUpdateExhibitionImageBatchSchema = z
   )
   .openapi("ApiUpdateExhibitionImageBatchInput");
 
-const ApiNoticeImageUrlsSchema = z
-  .array(
-    urlField(
-      "공지 첨부 이미지 URL",
-      "https://cdn.yonyoung.example/notices/image/notice-image.jpg",
-    ),
-  )
-  .max(10, "공지 첨부 이미지는 최대 10장까지 등록할 수 있습니다.")
+const EXAMPLE_ATTACHMENT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const EXAMPLE_ATTACHMENT_RESOURCE_ID = "20000000-0000-4000-8000-000000000001";
+const EXAMPLE_ATTACHMENT_FILE_URL =
+  "https://api.yonyoung.example/api/public/media/site/actor/file/uuid-report.pdf?sig=abc";
+
+export const ApiAttachmentScopeSchema = z
+  .enum(["activity", "site_donate"])
+  .openapi({
+    description:
+      '첨부파일 소속 구분 ("activity": 활동 페이지 자료, "site_donate": 후원 페이지 자료)',
+    example: "site_donate",
+  });
+
+export const ApiAttachmentSchema = z
+  .object({
+    id: z.string().uuid().openapi({
+      description: "첨부파일 UUID",
+      example: EXAMPLE_ATTACHMENT_ID,
+    }),
+    scope: ApiAttachmentScopeSchema,
+    resourceId: z.string().uuid().nullable().openapi({
+      description: "소속 리소스 UUID (site_donate 범위는 null)",
+      example: EXAMPLE_ATTACHMENT_RESOURCE_ID,
+    }),
+    title: z.string().openapi({
+      description: "표시용 제목",
+      example: "2026년 6월 회계 내역",
+    }),
+    fileUrl: z.string().url().nullable().openapi({
+      description: "다운로드 URL (HMAC 서명된 공개 미디어 URL, 링크 항목은 null)",
+      example: EXAMPLE_ATTACHMENT_FILE_URL,
+    }),
+    fileName: z.string().nullable().openapi({
+      description: "다운로드 시 보여줄 원본 파일명 (링크 항목은 null)",
+      example: "2026-06-회계내역.pdf",
+    }),
+    fileSize: z.number().int().nonnegative().nullable().openapi({
+      description: "파일 크기 (bytes, 링크 항목은 null)",
+      example: 1048576,
+    }),
+    mimeType: z.string().nullable().openapi({
+      description: "파일 MIME 타입 (링크 항목은 null)",
+      example: "application/pdf",
+    }),
+    linkUrl: z.string().url().nullable().openapi({
+      description: "외부 링크 URL (예: 구글 독스, 파일 항목은 null)",
+      example: "https://docs.google.com/spreadsheets/d/abc",
+    }),
+    sortOrder: z.number().int().openapi({
+      description: "노출 순서",
+      example: 0,
+    }),
+    createdAt: timestampField("첨부파일 생성 시각"),
+    updatedAt: timestampField("첨부파일 수정 시각"),
+  })
+  .openapi("ApiAttachment");
+
+const isHttpUrl = (value: string): boolean => {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+};
+
+export const ApiCreateAttachmentSchema = z
+  .object({
+    scope: ApiAttachmentScopeSchema,
+    resourceId: z
+      .string()
+      .uuid("resourceId 형식이 올바르지 않습니다.")
+      .nullable()
+      .optional()
+      .openapi({
+        description:
+          "소속 리소스 UUID (scope=activity면 필수, site_donate면 생략/null)",
+        example: EXAMPLE_ATTACHMENT_RESOURCE_ID,
+      }),
+    title: z
+      .string()
+      .trim()
+      .min(1, "제목을 입력해 주세요.")
+      .max(200)
+      .openapi({
+        description: "표시용 제목 (1~200자)",
+        example: "월간연영회 2026년 6월호",
+      }),
+    fileUrl: urlField(
+      "업로드 완료 후 발급받은 공개 미디어 URL (링크 항목이면 생략)",
+      EXAMPLE_ATTACHMENT_FILE_URL,
+    ).optional(),
+    fileName: z.string().trim().min(1).max(255).optional().openapi({
+      description: "원본 파일명 (링크 항목이면 생략)",
+      example: "2026-06-회계내역.pdf",
+    }),
+    fileSize: z.number().int().positive().optional().openapi({
+      description: "파일 크기 (bytes, 링크 항목이면 생략)",
+      example: 1048576,
+    }),
+    mimeType: z.enum(ALLOWED_ATTACHMENT_CONTENT_TYPES).optional().openapi({
+      description: "파일 MIME 타입 (허용 목록 내, 링크 항목이면 생략)",
+      example: "application/pdf",
+    }),
+    linkUrl: z
+      .string()
+      .url("linkUrl 형식이 올바르지 않습니다.")
+      .refine(isHttpUrl, "linkUrl은 http(s) URL만 사용할 수 있습니다.")
+      .optional()
+      .openapi({
+        description: "외부 링크 URL (예: 구글 독스 공유 링크, 파일 항목이면 생략)",
+        example: "https://docs.google.com/spreadsheets/d/abc",
+      }),
+    sortOrder: z.number().int().nonnegative().default(0).openapi({
+      description: "노출 순서 (기본값 0)",
+      example: 0,
+    }),
+  })
   .refine(
-    (items) => new Set(items).size === items.length,
-    {
-      message: "중복된 imageUrls를 전달할 수 없습니다.",
+    (input) => {
+      const fileFields = [
+        input.fileUrl,
+        input.fileName,
+        input.fileSize,
+        input.mimeType,
+      ];
+      const hasFile = fileFields.every((field) => field !== undefined);
+      const hasAnyFileField = fileFields.some((field) => field !== undefined);
+      const hasLink = input.linkUrl !== undefined;
+      if (hasLink) {
+        return !hasAnyFileField;
+      }
+      return hasFile;
     },
-  );
+    {
+      message:
+        "파일 필드 세트(fileUrl, fileName, fileSize, mimeType)와 linkUrl 중 정확히 하나만 전달해야 합니다.",
+    },
+  )
+  .openapi("ApiCreateAttachmentInput");
+
+export const ApiUpdateAttachmentSchema = z
+  .object({
+    title: z
+      .string()
+      .trim()
+      .min(1, "제목을 입력해 주세요.")
+      .max(200)
+      .optional()
+      .openapi({
+        description: "수정할 표시용 제목",
+        example: "2026년 상반기 회계 내역",
+      }),
+    sortOrder: z.number().int().nonnegative().optional().openapi({
+      description: "수정할 노출 순서",
+      example: 1,
+    }),
+  })
+  .strict()
+  .refine(
+    (input) => input.title !== undefined || input.sortOrder !== undefined,
+    {
+      message: "수정할 필드를 하나 이상 전달해야 합니다.",
+    },
+  )
+  .openapi("ApiUpdateAttachmentInput");
+
+export const ApiAttachmentListQuerySchema = z
+  .object({
+    scope: ApiAttachmentScopeSchema,
+    resourceId: z
+      .string()
+      .uuid("resourceId 형식이 올바르지 않습니다.")
+      .optional()
+      .openapi({
+        description: "소속 리소스 UUID 필터 (scope=activity일 때 사용)",
+        example: EXAMPLE_ATTACHMENT_RESOURCE_ID,
+      }),
+  })
+  .openapi("ApiAttachmentListQuery");
 
 const ApiShowcaseImageUrlsSchema = z
   .array(
@@ -738,474 +886,6 @@ const ApiShowcaseImageUrlsSchema = z
       message: "중복된 showcaseImageUrls를 전달할 수 없습니다.",
     },
   );
-
-const ApiNoticeAuthorSchema = z
-  .object({
-    id: z.string().openapi({
-      description: "작성자 식별자 (better-auth user.id)",
-      example: EXAMPLE_USER_ID,
-    }),
-    name: z.string().openapi({
-      description: "작성자 이름",
-      example: "홍길동",
-    }),
-    familyName: z.string().nullable().openapi({
-      description: "작성자 성",
-      example: "홍",
-    }),
-    givenName: z.string().nullable().openapi({
-      description: "작성자 이름(given name)",
-      example: "길동",
-    }),
-    image: z.string().url().nullable().openapi({
-      description: "작성자 프로필 이미지 URL (없으면 null)",
-      example: "https://cdn.yonyoung.example/users/profile/member.png",
-    }),
-    role: z.string().nullable().openapi({
-      description: "작성자 역할 문자열",
-      example: "manager",
-    }),
-  })
-  .openapi("ApiNoticeAuthor");
-
-export const ApiGenerationNoticeSchema = z
-  .object({
-    id: z.string().uuid().openapi({
-      description: "기수 공지 UUID",
-      example: EXAMPLE_NOTICE_ID,
-    }),
-    generationId: z.string().uuid().openapi({
-      description: "소속 기수 UUID",
-      example: EXAMPLE_GENERATION_ID,
-    }),
-    title: z.string().openapi({
-      description: "공지 제목",
-      example: "60기 정기 회의 안내",
-    }),
-    content: z.string().openapi({
-      description: "공지 리치텍스트 HTML 본문",
-      example: "<p>이번 주 토요일 14시에 회의를 진행합니다.</p>",
-    }),
-    imageUrls: ApiNoticeImageUrlsSchema.openapi({
-      description: "공지 첨부 이미지 URL 목록",
-      example: [
-        "https://cdn.yonyoung.example/notices/image/notice-1.jpg",
-        "https://cdn.yonyoung.example/notices/image/notice-2.jpg",
-      ],
-    }),
-    author: ApiNoticeAuthorSchema.openapi({
-      description: "공지 작성자 정보",
-    }),
-    createdAt: timestampField("공지 생성 시각", EXAMPLE_TIMESTAMP_MS),
-    updatedAt: timestampField("공지 수정 시각", EXAMPLE_TIMESTAMP_MS),
-    updatedBy: ApiAuditActorSchema.nullable().openapi({
-      description: "마지막 수정자 정보 (로그가 없으면 null)",
-    }),
-  })
-  .openapi("ApiGenerationNotice");
-
-export const ApiCreateGenerationNoticeSchema = z
-  .object({
-    title: z.string().trim().min(1, "공지 제목은 비워둘 수 없습니다.").openapi({
-      description: "공지 제목",
-      example: "60기 정기 회의 안내",
-    }),
-    content: z.string().trim().min(1, "공지 본문은 비워둘 수 없습니다.").openapi({
-      description: "공지 리치텍스트 HTML 본문",
-      example: "<p>이번 주 토요일 14시에 회의를 진행합니다.</p>",
-    }),
-    imageUrls: ApiNoticeImageUrlsSchema.optional().default([]).openapi({
-      description: "공지 첨부 이미지 URL 목록 (미전달 시 빈 배열)",
-      example: ["https://cdn.yonyoung.example/notices/image/notice-1.jpg"],
-    }),
-  })
-  .openapi("ApiCreateGenerationNoticeInput");
-
-export const ApiUpdateGenerationNoticeSchema = z
-  .object({
-    title: z
-      .string()
-      .trim()
-      .min(1, "공지 제목은 비워둘 수 없습니다.")
-      .optional()
-      .openapi({
-        description: "공지 제목",
-        example: "60기 정기 회의 안내",
-      }),
-    content: z
-      .string()
-      .trim()
-      .min(1, "공지 본문은 비워둘 수 없습니다.")
-      .optional()
-      .openapi({
-        description: "공지 리치텍스트 HTML 본문",
-        example: "<p>회의 장소가 소회의실로 변경되었습니다.</p>",
-      }),
-    imageUrls: ApiNoticeImageUrlsSchema.optional().openapi({
-      description: "공지 첨부 이미지 URL 목록",
-      example: ["https://cdn.yonyoung.example/notices/image/updated-notice.jpg"],
-    }),
-  })
-  .strict()
-  .openapi("ApiUpdateGenerationNoticeInput");
-
-export const ApiGlobalNoticeSchema = z
-  .object({
-    id: z.string().uuid().openapi({
-      description: "전체 공지 UUID",
-      example: EXAMPLE_NOTICE_ID,
-    }),
-    title: z.string().openapi({
-      description: "공지 제목",
-      example: "연영회 정기 총회 안내",
-    }),
-    content: z.string().openapi({
-      description: "공지 리치텍스트 HTML 본문",
-      example: "<p>다음 주 금요일 19시 정기 총회가 진행됩니다.</p>",
-    }),
-    imageUrls: ApiNoticeImageUrlsSchema.openapi({
-      description: "공지 첨부 이미지 URL 목록",
-      example: ["https://cdn.yonyoung.example/notices/image/global-notice.jpg"],
-    }),
-    author: ApiNoticeAuthorSchema.openapi({
-      description: "공지 작성자 정보",
-    }),
-    createdAt: timestampField("공지 생성 시각", EXAMPLE_TIMESTAMP_MS),
-    updatedAt: timestampField("공지 수정 시각", EXAMPLE_TIMESTAMP_MS),
-    updatedBy: ApiAuditActorSchema.nullable().openapi({
-      description: "마지막 수정자 정보 (로그가 없으면 null)",
-    }),
-  })
-  .openapi("ApiGlobalNotice");
-
-export const ApiCreateGlobalNoticeSchema = z
-  .object({
-    title: z.string().trim().min(1, "공지 제목은 비워둘 수 없습니다.").openapi({
-      description: "공지 제목",
-      example: "연영회 정기 총회 안내",
-    }),
-    content: z.string().trim().min(1, "공지 본문은 비워둘 수 없습니다.").openapi({
-      description: "공지 리치텍스트 HTML 본문",
-      example: "<p>다음 주 금요일 19시 정기 총회가 진행됩니다.</p>",
-    }),
-    imageUrls: ApiNoticeImageUrlsSchema.optional().default([]).openapi({
-      description: "공지 첨부 이미지 URL 목록 (미전달 시 빈 배열)",
-      example: ["https://cdn.yonyoung.example/notices/image/global-notice.jpg"],
-    }),
-  })
-  .openapi("ApiCreateGlobalNoticeInput");
-
-export const ApiUpdateGlobalNoticeSchema = z
-  .object({
-    title: z
-      .string()
-      .trim()
-      .min(1, "공지 제목은 비워둘 수 없습니다.")
-      .optional()
-      .openapi({
-        description: "공지 제목",
-        example: "연영회 정기 총회 안내",
-      }),
-    content: z
-      .string()
-      .trim()
-      .min(1, "공지 본문은 비워둘 수 없습니다.")
-      .optional()
-      .openapi({
-        description: "공지 리치텍스트 HTML 본문",
-        example: "<p>일정이 변경되어 토요일 19시로 진행됩니다.</p>",
-      }),
-    imageUrls: ApiNoticeImageUrlsSchema.optional().openapi({
-      description: "공지 첨부 이미지 URL 목록",
-      example: ["https://cdn.yonyoung.example/notices/image/global-notice-updated.jpg"],
-    }),
-  })
-  .strict()
-  .openapi("ApiUpdateGlobalNoticeInput");
-
-const ApiMarketItemStatusSchema = z
-  .enum(["selling", "reserved", "sold"])
-  .openapi("ApiMarketItemStatus");
-
-const ApiMarketConditionGradeSchema = z
-  .enum(["A", "B", "C", "D"])
-  .openapi("ApiMarketConditionGrade");
-
-const ApiMarketImageUrlsSchema = z
-  .array(z.string().url("이미지 URL 형식이 올바르지 않습니다."))
-  .min(1, "상품 이미지는 최소 1장 필요합니다.")
-  .max(10, "상품 이미지는 최대 10장까지 등록할 수 있습니다.")
-  .refine(
-    (urls) => new Set(urls).size === urls.length,
-    "중복된 이미지 URL은 허용되지 않습니다.",
-  )
-  .openapi("ApiMarketImageUrls");
-
-const ApiMarketSellerSchema = z
-  .object({
-    id: z.string().min(1).openapi({
-      description: "판매자 식별자",
-      example: EXAMPLE_USER_ID,
-    }),
-    name: z.string().openapi({
-      description: "판매자 이름",
-      example: "홍길동",
-    }),
-    familyName: z.string().nullable().openapi({
-      description: "판매자 성",
-      example: "홍",
-    }),
-    givenName: z.string().nullable().openapi({
-      description: "판매자 이름(given name)",
-      example: "길동",
-    }),
-    image: z.string().url().nullable().openapi({
-      description: "판매자 프로필 이미지 URL",
-      example: "https://cdn.yonyoung.example/users/profile/member.png",
-    }),
-    role: z.string().nullable().openapi({
-      description: "판매자 역할 문자열",
-      example: "regular_member",
-    }),
-  })
-  .openapi("ApiMarketSeller");
-
-export const ApiMarketItemSchema = z
-  .object({
-    id: z.string().uuid().openapi({
-      description: "장터 게시물 UUID",
-      example: EXAMPLE_MARKET_ITEM_ID,
-    }),
-    sellerId: z.string().min(1).openapi({
-      description: "판매자 식별자",
-      example: EXAMPLE_USER_ID,
-    }),
-    name: z.string().openapi({
-      description: "판매 물건 이름",
-      example: "Sony FE 24-70mm F2.8 GM II",
-    }),
-    imageUrls: ApiMarketImageUrlsSchema.openapi({
-      description: "판매 물건 이미지 URL 목록 (1~10장)",
-    }),
-    manufacturer: z.string().nullable().openapi({
-      description: "제조사",
-      example: "Sony",
-    }),
-    productCode: z.string().nullable().openapi({
-      description: "제품 코드",
-      example: "SEL2470GM2",
-    }),
-    conditionGrade: ApiMarketConditionGradeSchema.nullable().openapi({
-      description: "제품 상태 등급",
-      example: "A",
-    }),
-    description: z.string().nullable().openapi({
-      description: "판매 설명 리치텍스트 HTML",
-      example: "<p>실사용 3개월, 박스/보증서 포함</p>",
-    }),
-    price: z.number().int().nonnegative().openapi({
-      description: "판매 가격(원 단위 정수)",
-      example: 2200000,
-    }),
-    status: ApiMarketItemStatusSchema.openapi({
-      description: "판매 상태",
-      example: "selling",
-    }),
-    seller: ApiMarketSellerSchema.openapi({
-      description: "판매자 프로필",
-    }),
-    createdAt: timestampField("게시물 생성 시각", EXAMPLE_TIMESTAMP_MS),
-    updatedAt: timestampField("게시물 수정 시각", EXAMPLE_TIMESTAMP_MS),
-    updatedBy: ApiAuditActorSchema.nullable().openapi({
-      description: "마지막 수정자 정보",
-    }),
-  })
-  .openapi("ApiMarketItem");
-
-const nullableTrimmedStringField = (description: string, example: string) =>
-  z
-    .string()
-    .trim()
-    .min(1, `${description}은 비워둘 수 없습니다.`)
-    .nullable()
-    .openapi({
-      description,
-      example,
-    });
-
-export const ApiCreateMarketItemSchema = z
-  .object({
-    name: z.string().trim().min(1, "판매 물건 이름은 비워둘 수 없습니다.").openapi({
-      description: "판매 물건 이름",
-      example: "Sony FE 24-70mm F2.8 GM II",
-    }),
-    imageUrls: ApiMarketImageUrlsSchema.openapi({
-      description: "판매 물건 이미지 URL 목록 (필수, 1~10장)",
-    }),
-    manufacturer: nullableTrimmedStringField("제조사", "Sony").optional(),
-    productCode: nullableTrimmedStringField("제품 코드", "SEL2470GM2").optional(),
-    conditionGrade: ApiMarketConditionGradeSchema.nullable().optional().openapi({
-      description: "제품 상태 등급",
-      example: "A",
-    }),
-    description: nullableTrimmedStringField(
-      "판매 설명 리치텍스트 HTML",
-      "<p>실사용 3개월, 박스/보증서 포함</p>",
-    ).optional(),
-    price: z.number().int().nonnegative("가격은 0 이상이어야 합니다.").openapi({
-      description: "판매 가격(원 단위 정수)",
-      example: 2200000,
-    }),
-  })
-  .openapi("ApiCreateMarketItemInput");
-
-export const ApiUpdateMarketItemSchema = z
-  .object({
-    name: z
-      .string()
-      .trim()
-      .min(1, "판매 물건 이름은 비워둘 수 없습니다.")
-      .optional()
-      .openapi({
-        description: "판매 물건 이름",
-        example: "Sony FE 24-70mm F2.8 GM II",
-      }),
-    imageUrls: ApiMarketImageUrlsSchema.optional().openapi({
-      description: "판매 물건 이미지 URL 목록 (1~10장)",
-    }),
-    manufacturer: nullableTrimmedStringField("제조사", "Sony").optional(),
-    productCode: nullableTrimmedStringField("제품 코드", "SEL2470GM2").optional(),
-    conditionGrade: ApiMarketConditionGradeSchema.nullable().optional().openapi({
-      description: "제품 상태 등급",
-      example: "B",
-    }),
-    description: nullableTrimmedStringField(
-      "판매 설명 리치텍스트 HTML",
-      "<p>생활기스 있음</p>",
-    ).optional(),
-    price: z.number().int().nonnegative("가격은 0 이상이어야 합니다.").optional().openapi({
-      description: "판매 가격(원 단위 정수)",
-      example: 1990000,
-    }),
-  })
-  .strict()
-  .openapi("ApiUpdateMarketItemInput");
-
-export const ApiUpdateMarketItemStatusSchema = z
-  .object({
-    status: ApiMarketItemStatusSchema.openapi({
-      description: "변경할 판매 상태",
-      example: "reserved",
-    }),
-  })
-  .strict()
-  .openapi("ApiUpdateMarketItemStatusInput");
-
-export const ApiListMarketItemsQuerySchema = z
-  .object({
-    status: ApiMarketItemStatusSchema.optional().openapi({
-      description: "판매 상태 필터",
-      example: "selling",
-    }),
-    sellerId: z.string().min(1).optional().openapi({
-      description: "판매자 식별자 필터",
-      example: EXAMPLE_USER_ID,
-    }),
-    page: z.coerce.number().int().min(1).optional().openapi({
-      description: "페이지 번호(1부터 시작)",
-      example: 1,
-    }),
-    pageSize: z.coerce.number().int().min(1).max(100).optional().openapi({
-      description: "페이지 크기(기본 20, 최대 100)",
-      example: 20,
-    }),
-  })
-  .openapi("ApiListMarketItemsQuery");
-
-export const ApiMarketCommentSchema = z
-  .object({
-    id: z.string().uuid().openapi({
-      description: "댓글 UUID",
-      example: EXAMPLE_MARKET_COMMENT_ID,
-    }),
-    itemId: z.string().uuid().openapi({
-      description: "상위 장터 게시물 UUID",
-      example: EXAMPLE_MARKET_ITEM_ID,
-    }),
-    author: ApiMarketSellerSchema.openapi({
-      description: "댓글 작성자 정보",
-    }),
-    content: z.string().openapi({
-      description: "댓글 본문(plain text)",
-      example: "거래 가능할까요?",
-    }),
-    createdAt: timestampField("댓글 생성 시각", EXAMPLE_TIMESTAMP_MS),
-    updatedAt: timestampField("댓글 수정 시각", EXAMPLE_TIMESTAMP_MS),
-    updatedBy: ApiAuditActorSchema.nullable().openapi({
-      description: "마지막 수정자 정보",
-    }),
-  })
-  .openapi("ApiMarketComment");
-
-export const ApiCreateMarketCommentSchema = z
-  .object({
-    content: z.string().trim().min(1, "댓글 본문은 비워둘 수 없습니다.").openapi({
-      description: "댓글 본문",
-      example: "거래 가능할까요?",
-    }),
-  })
-  .openapi("ApiCreateMarketCommentInput");
-
-export const ApiUpdateMarketCommentSchema = z
-  .object({
-    content: z
-      .string()
-      .trim()
-      .min(1, "댓글 본문은 비워둘 수 없습니다.")
-      .optional()
-      .openapi({
-        description: "댓글 본문",
-        example: "채팅 확인 부탁드립니다.",
-      }),
-  })
-  .strict()
-  .openapi("ApiUpdateMarketCommentInput");
-
-export const ApiMarketItemIdParamSchema = z
-  .object({
-    id: z.string().uuid().openapi({
-      description: "장터 게시물 UUID",
-      example: EXAMPLE_MARKET_ITEM_ID,
-    }),
-  })
-  .openapi("ApiMarketItemIdParam");
-
-export const ApiMarketCommentIdParamSchema = z
-  .object({
-    id: z.string().uuid().openapi({
-      description: "장터 댓글 UUID",
-      example: EXAMPLE_MARKET_COMMENT_ID,
-    }),
-  })
-  .openapi("ApiMarketCommentIdParam");
-
-export const ApiMarketPushSubscriptionSchema = z
-  .object({
-    endpoint: z.string().url().openapi({
-      description: "Push subscription endpoint URL",
-      example: "https://fcm.googleapis.com/fcm/send/abc123",
-    }),
-    p256dh: z.string().min(1).openapi({
-      description: "Push subscription p256dh key",
-      example: "BOr6-fake-key",
-    }),
-    auth: z.string().min(1).openapi({
-      description: "Push subscription auth secret",
-      example: "fake-auth-secret",
-    }),
-  })
-  .strict()
-  .openapi("ApiMarketPushSubscriptionInput");
 
 export const ApiLinktreeItemSchema = z
   .object({
@@ -1521,8 +1201,6 @@ const ApiUserResourceHistoryResourceTypeSchema = z
   .enum([
     "activity",
     "exhibition",
-    "generation_notice",
-    "global_notice",
     "linktree",
     "linktree_item",
   ])
@@ -1559,7 +1237,7 @@ const ApiUserResourceHistoryItemSchema = z
       example: false,
     }),
     generationId: z.string().uuid().nullable().openapi({
-      description: "기수 기반 리소스(activity/exhibition/generation_notice)의 기수 UUID",
+      description: "기수 기반 리소스(activity/exhibition)의 기수 UUID",
       example: EXAMPLE_GENERATION_ID,
     }),
     linktreeId: z.string().uuid().nullable().openapi({

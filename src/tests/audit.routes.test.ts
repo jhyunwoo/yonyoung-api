@@ -52,23 +52,17 @@ describe("audit routes", () => {
     expect(listAuditLogs).toHaveBeenCalledWith("activity", IDs.activity, 5);
   });
 
-  it("manager는 generation_notice 감사 로그를 조회할 수 있다", async () => {
+  it("manager는 attachment 감사 로그를 조회할 수 있다", async () => {
     const listAuditLogs = fn(async () => []);
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ listAuditLogs }),
     });
 
-    const response = await app.request(
-      `/api/audit/generation_notice/${IDs.generationNotice}`,
-    );
+    const response = await app.request(`/api/audit/attachment/${IDs.attachment}`);
 
     expect(response.status).toBe(200);
-    expect(listAuditLogs).toHaveBeenCalledWith(
-      "generation_notice",
-      IDs.generationNotice,
-      20,
-    );
+    expect(listAuditLogs).toHaveBeenCalledWith("attachment", IDs.attachment, 20);
   });
 
   it("resourceType별 권한 리소스를 매핑해 감사 로그를 조회한다", async () => {
@@ -83,9 +77,7 @@ describe("audit routes", () => {
       { resourceType: "exhibition", resourceId: IDs.exhibition },
       { resourceType: "linktree", resourceId: IDs.linktree },
       { resourceType: "linktree_item", resourceId: IDs.linktreeItem },
-      { resourceType: "global_notice", resourceId: IDs.globalNotice },
-      { resourceType: "market_item", resourceId: "88000000-0000-4000-8000-000000000001" },
-      { resourceType: "market_comment", resourceId: "99000000-0000-4000-8000-000000000001" },
+      { resourceType: "attachment", resourceId: IDs.attachment },
     ] as const;
 
     for (const sample of samples) {

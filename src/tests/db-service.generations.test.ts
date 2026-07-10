@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { activities, exhibitions, generationNotices, generations } from "../lib/db/schema";
+import { activities, exhibitions, generations } from "../lib/db/schema";
 
 const createDBMock = vi.hoisted(() => vi.fn());
 
@@ -67,8 +67,7 @@ describe("db service generations create", () => {
 
     expect(mockDb.remove).toHaveBeenNthCalledWith(1, activities);
     expect(mockDb.remove).toHaveBeenNthCalledWith(2, exhibitions);
-    expect(mockDb.remove).toHaveBeenNthCalledWith(3, generationNotices);
-    expect(mockDb.remove).toHaveBeenNthCalledWith(4, generations);
+    expect(mockDb.remove).toHaveBeenNthCalledWith(3, generations);
     expect(mockDb.insert).toHaveBeenCalledWith(generations);
     expect(mockDb.insertValues).toHaveBeenCalledWith({
       id: "new-generation-id",

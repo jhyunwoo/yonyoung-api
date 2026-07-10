@@ -30,13 +30,10 @@ export type ApiAuditResourceType =
   | "generation"
   | "activity"
   | "exhibition"
-  | "generation_notice"
-  | "global_notice"
-  | "market_item"
-  | "market_comment"
   | "linktree"
   | "linktree_item"
-  | "user";
+  | "user"
+  | "attachment";
 
 export type ApiAuditAction = "create" | "update" | "delete";
 
@@ -182,134 +179,52 @@ export type ApiUpdateExhibitionImageBatchItemInput = {
   sortOrder?: number;
 };
 
-export type ApiNoticeAuthor = {
-  id: string;
-  name: string;
-  familyName: string | null;
-  givenName: string | null;
-  image: string | null;
-  role: ApiRole | null;
-};
+/**
+ * 첨부파일 소속 구분.
+ * - "activity": 개별 활동 페이지 자료 (resourceId = 활동 UUID)
+ * - "site_donate": 후원 페이지 전역 자료 (resourceId = null)
+ */
+export type ApiAttachmentScope = "activity" | "site_donate";
 
-export type ApiGenerationNotice = {
+/** 파일 첨부(fileUrl 세트)와 외부 링크(linkUrl) 중 정확히 하나만 값이 채워진다. */
+export type ApiAttachment = {
   id: string;
-  generationId: string;
+  scope: ApiAttachmentScope;
+  resourceId: string | null;
+  /** 표시용 제목 (예: "2026년 6월 회계 내역") */
   title: string;
-  content: string;
-  imageUrls: string[];
-  author: ApiNoticeAuthor;
+  fileUrl: string | null;
+  /** 다운로드 시 보여줄 원본 파일명 */
+  fileName: string | null;
+  fileSize: number | null;
+  mimeType: string | null;
+  /** 외부 링크 URL (예: 구글 독스 공유 링크) */
+  linkUrl: string | null;
+  sortOrder: number;
   createdAt: number;
   updatedAt: number;
-  updatedBy: ApiAuditActor | null;
 };
 
-export type ApiCreateGenerationNoticeInput = {
+export type ApiCreateAttachmentInput = {
+  scope: ApiAttachmentScope;
+  resourceId?: string | null;
   title: string;
-  content: string;
-  imageUrls?: string[];
+  fileUrl?: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
+  linkUrl?: string;
+  sortOrder?: number;
 };
 
-export type ApiUpdateGenerationNoticeInput = Partial<ApiCreateGenerationNoticeInput>;
-
-export type ApiGlobalNotice = {
-  id: string;
-  title: string;
-  content: string;
-  imageUrls: string[];
-  author: ApiNoticeAuthor;
-  createdAt: number;
-  updatedAt: number;
-  updatedBy: ApiAuditActor | null;
+export type ApiUpdateAttachmentInput = {
+  title?: string;
+  sortOrder?: number;
 };
 
-export type ApiCreateGlobalNoticeInput = {
-  title: string;
-  content: string;
-  imageUrls?: string[];
-};
-
-export type ApiUpdateGlobalNoticeInput = Partial<ApiCreateGlobalNoticeInput>;
-
-export type ApiMarketItemStatus = "selling" | "reserved" | "sold";
-export type ApiMarketConditionGrade = "A" | "B" | "C" | "D";
-
-export type ApiMarketSeller = {
-  id: string;
-  name: string;
-  familyName: string | null;
-  givenName: string | null;
-  image: string | null;
-  role: ApiRole | null;
-};
-
-export type ApiMarketItem = {
-  id: string;
-  sellerId: string;
-  name: string;
-  imageUrls: string[];
-  manufacturer: string | null;
-  productCode: string | null;
-  conditionGrade: ApiMarketConditionGrade | null;
-  description: string | null;
-  price: number;
-  status: ApiMarketItemStatus;
-  seller: ApiMarketSeller;
-  createdAt: number;
-  updatedAt: number;
-  updatedBy: ApiAuditActor | null;
-};
-
-export type ApiCreateMarketItemInput = {
-  name: string;
-  imageUrls: string[];
-  manufacturer?: string | null;
-  productCode?: string | null;
-  conditionGrade?: ApiMarketConditionGrade | null;
-  description?: string | null;
-  price: number;
-};
-
-export type ApiUpdateMarketItemInput = Partial<{
-  name: string;
-  imageUrls: string[];
-  manufacturer: string | null;
-  productCode: string | null;
-  conditionGrade: ApiMarketConditionGrade | null;
-  description: string | null;
-  price: number;
-}>;
-
-export type ApiUpdateMarketItemStatusInput = {
-  status: ApiMarketItemStatus;
-};
-
-export type ApiListMarketItemsQuery = {
-  status?: ApiMarketItemStatus;
-  sellerId?: string;
-  page?: number;
-  pageSize?: number;
-};
-
-export type ApiMarketComment = {
-  id: string;
-  itemId: string;
-  author: ApiMarketSeller;
-  content: string;
-  createdAt: number;
-  updatedAt: number;
-  updatedBy: ApiAuditActor | null;
-};
-
-export type ApiCreateMarketCommentInput = {
-  content: string;
-};
-
-export type ApiUpdateMarketCommentInput = Partial<ApiCreateMarketCommentInput>;
-
-export type ApiMarketPushSubscriptionInput = {
-  endpoint: string;
-  p256dh: string;
-  auth: string;
+export type ApiAttachmentListQuery = {
+  scope: ApiAttachmentScope;
+  resourceId?: string;
 };
 
 export type ApiLinktreeItem = {
@@ -412,8 +327,6 @@ export type ApiUser = {
 export type ApiUserResourceHistoryResourceType =
   | "activity"
   | "exhibition"
-  | "generation_notice"
-  | "global_notice"
   | "linktree"
   | "linktree_item";
 

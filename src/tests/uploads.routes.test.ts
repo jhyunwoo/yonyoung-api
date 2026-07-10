@@ -35,19 +35,9 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
       expected: { resource: "exhibitions", slot: "detail" as const },
     },
     {
-      path: "/api/notices/presign/image",
-      role: "manager" as const,
-      expected: { resource: "notices", slot: "image" as const },
-    },
-    {
       path: "/api/recruiting/presign/image",
-      role: "manager" as const,
+      role: "vice_president" as const,
       expected: { resource: "notices", slot: "image" as const },
-    },
-    {
-      path: "/api/market/presign/image",
-      role: "regular_member" as const,
-      expected: { resource: "market", slot: "image" as const },
     },
   ];
 
@@ -69,11 +59,9 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
     });
 
     it(`${route.path}는 권한 없는 사용자에게 403을 반환한다`, /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-      const forbiddenRole =
-        route.path.startsWith("/api/activities/") ||
-        route.path.startsWith("/api/market/")
-          ? ("unverified" as const)
-          : ("regular_member" as const);
+      const forbiddenRole = route.path.startsWith("/api/activities/")
+        ? ("unverified" as const)
+        : ("regular_member" as const);
       const issuePresignedPutUrl = fn(
         /** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => ({
           uploadUrl: "https://upload.example.com/signed",
@@ -280,9 +268,8 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
   for (const path of [
     "/api/activities/presign/cover",
     "/api/activities/presign/detail",
-    "/api/market/presign/image",
   ]) {
-    it(`${path}는 regular_member 권한을 리소스 정책에 따라 적용한다`, async () => {
+    it(`${path}는 regular_member에게 403을 반환한다`, async () => {
       const issuePresignedPutUrl = fn(async () => ({
         uploadUrl: "https://upload.example.com/signed",
         objectKey: "activities/object-key",
@@ -304,15 +291,9 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
         }),
       });
 
-      if (path.startsWith("/api/activities/")) {
-        expect(response.status).toBe(403);
-        await expectErrorCode(response, "FORBIDDEN");
-        expect(issuePresignedPutUrl).not.toHaveBeenCalled();
-        return;
-      }
-
-      expect(response.status).toBe(201);
-      expect(issuePresignedPutUrl).toHaveBeenCalled();
+      expect(response.status).toBe(403);
+      await expectErrorCode(response, "FORBIDDEN");
+      expect(issuePresignedPutUrl).not.toHaveBeenCalled();
     });
   }
 
@@ -613,12 +594,12 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("/api/notices/presign/image는 허용되지 않은 content-type 요청을 거부한다", async () => {
+  it("/api/recruiting/presign/image는 허용되지 않은 content-type 요청을 거부한다", async () => {
     const app = createTestApp({
-      actor: createActor("manager", IDs.manager),
+      actor: createActor("vice_president", IDs.vicePresident),
     });
 
-    const response = await app.request("/api/notices/presign/image", {
+    const response = await app.request("/api/recruiting/presign/image", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -632,12 +613,12 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("/api/notices/presign/image는 허용 크기 초과 시 413을 반환한다", async () => {
+  it("/api/recruiting/presign/image는 허용 크기 초과 시 413을 반환한다", async () => {
     const app = createTestApp({
-      actor: createActor("manager", IDs.manager),
+      actor: createActor("vice_president", IDs.vicePresident),
     });
 
-    const response = await app.request("/api/notices/presign/image", {
+    const response = await app.request("/api/recruiting/presign/image", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -1152,55 +1133,6 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
     expect(initiateMultipartUpload).not.toHaveBeenCalled();
   });
 
-  it("/api/market/multipart/image/init은 regular_member에게 허용되고 unverified는 403을 반환한다", async () => {
-    const initiateMultipartUpload = fn(async () => ({
-      uploadId: "market-upload-id",
-      objectKey: `market/${IDs.member}/image/market-image-key`,
-      publicUrl: "https://cdn.example.com/market/market-image-key",
-      partSize: UPLOAD_LIMITS.multipartPartSizeBytes,
-      maxPartNumber: 4,
-    }));
-    const allowedApp = createTestApp({
-      actor: createActor("regular_member", IDs.member),
-      presignService: createPresignServiceMock({ initiateMultipartUpload }),
-    });
-
-    const allowedResponse = await allowedApp.request("/api/market/multipart/image/init", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        fileName: "market-image.png",
-        contentType: "image/png",
-        fileSize: UPLOAD_LIMITS.multipartPartSizeBytes * 2,
-      }),
-    });
-    expect(allowedResponse.status).toBe(201);
-    expect(initiateMultipartUpload).toHaveBeenCalledWith({
-      actorId: IDs.member,
-      resource: "market",
-      slot: "image",
-      fileName: "market-image.png",
-      contentType: "image/png",
-      fileSize: UPLOAD_LIMITS.multipartPartSizeBytes * 2,
-    });
-
-    const deniedApp = createTestApp({
-      actor: createActor("unverified", IDs.otherUser),
-      presignService: createPresignServiceMock({ initiateMultipartUpload }),
-    });
-    const deniedResponse = await deniedApp.request("/api/market/multipart/image/init", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        fileName: "market-image.png",
-        contentType: "image/png",
-        fileSize: UPLOAD_LIMITS.multipartPartSizeBytes * 2,
-      }),
-    });
-    expect(deniedResponse.status).toBe(403);
-    await expectErrorCode(deniedResponse, "FORBIDDEN");
-  });
-
   it("/api/users/multipart/profile/init은 member 계열 사용자에게 허용된다", async () => {
     const initiateMultipartUpload = fn(async () => ({
       uploadId: "profile-upload-id",
@@ -1413,5 +1345,144 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
 
     expect(response.status).toBe(500);
     await expectErrorCode(response, "INTERNAL_ERROR");
+  });
+});
+
+describe("attachment file presign routes", () => {
+  const pdfPayload = {
+    fileName: "2026-06-회계내역.pdf",
+    contentType: "application/pdf",
+    fileSize: 1024 * 1024,
+  };
+
+  it("/api/site/presign/file는 manager에게 403을 반환한다", async () => {
+    const issuePresignedPutUrl = fn(async () => ({
+      uploadUrl: "https://upload.example.com/signed",
+      objectKey: "object-key",
+      publicUrl: "https://cdn.example.com/object-key",
+      requiredHeaders: { "Content-Type": "application/pdf" },
+    }));
+    const app = createTestApp({
+      actor: createActor("manager", IDs.manager),
+      presignService: createPresignServiceMock({ issuePresignedPutUrl }),
+    });
+
+    const response = await app.request("/api/site/presign/file", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(pdfPayload),
+    });
+
+    expect(response.status).toBe(403);
+    await expectErrorCode(response, "FORBIDDEN");
+    expect(issuePresignedPutUrl).not.toHaveBeenCalled();
+  });
+
+  it("/api/site/presign/file는 부회장에게 site/file 슬롯 presign을 발급한다", async () => {
+    const issuePresignedPutUrl = fn(async () => ({
+      uploadUrl: "https://upload.example.com/signed",
+      objectKey: "object-key",
+      publicUrl: "https://cdn.example.com/object-key",
+      requiredHeaders: { "Content-Type": "application/pdf" },
+    }));
+    const app = createTestApp({
+      actor: createActor("vice_president", IDs.vicePresident),
+      presignService: createPresignServiceMock({ issuePresignedPutUrl }),
+    });
+
+    const response = await app.request("/api/site/presign/file", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(pdfPayload),
+    });
+
+    expect(response.status).toBe(201);
+    expect(issuePresignedPutUrl).toHaveBeenCalledWith({
+      actorId: IDs.vicePresident,
+      resource: "site",
+      slot: "file",
+      fileName: pdfPayload.fileName,
+      contentType: "application/pdf",
+      fileSize: pdfPayload.fileSize,
+    });
+  });
+
+  it("/api/activities/presign/file는 manager에게 activities/file 슬롯 presign을 발급한다", async () => {
+    const issuePresignedPutUrl = fn(async () => ({
+      uploadUrl: "https://upload.example.com/signed",
+      objectKey: "object-key",
+      publicUrl: "https://cdn.example.com/object-key",
+      requiredHeaders: { "Content-Type": "application/pdf" },
+    }));
+    const app = createTestApp({
+      actor: createActor("manager", IDs.manager),
+      presignService: createPresignServiceMock({ issuePresignedPutUrl }),
+    });
+
+    const response = await app.request("/api/activities/presign/file", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(pdfPayload),
+    });
+
+    expect(response.status).toBe(201);
+    expect(issuePresignedPutUrl).toHaveBeenCalledWith({
+      actorId: IDs.manager,
+      resource: "activities",
+      slot: "file",
+      fileName: pdfPayload.fileName,
+      contentType: "application/pdf",
+      fileSize: pdfPayload.fileSize,
+    });
+  });
+
+  it("/api/activities/presign/file는 일반 멤버에게 403을 반환한다", async () => {
+    const app = createTestApp({
+      actor: createActor("regular_member", IDs.member),
+      presignService: createPresignServiceMock(),
+    });
+
+    const response = await app.request("/api/activities/presign/file", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(pdfPayload),
+    });
+
+    expect(response.status).toBe(403);
+    await expectErrorCode(response, "FORBIDDEN");
+  });
+
+  it("file presign 경로는 이미지 content-type을 415로 거부한다", async () => {
+    const app = createTestApp({
+      actor: createActor("vice_president", IDs.vicePresident),
+      presignService: createPresignServiceMock(),
+    });
+
+    const response = await app.request("/api/site/presign/file", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        fileName: "cover.png",
+        contentType: "image/png",
+        fileSize: 1024,
+      }),
+    });
+
+    expect(response.status).toBe(415);
+  });
+
+  it("이미지 presign 경로는 문서 content-type을 415로 거부한다", async () => {
+    const app = createTestApp({
+      actor: createActor("manager", IDs.manager),
+      presignService: createPresignServiceMock(),
+    });
+
+    const response = await app.request("/api/activities/presign/cover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(pdfPayload),
+    });
+
+    expect(response.status).toBe(415);
   });
 });

@@ -1,5 +1,6 @@
 import { OpenAPIHono, type OpenAPIHonoOptions } from "@hono/zod-openapi";
 import { registerActivityRoutes } from "../modules/activities";
+import { registerAttachmentRoutes } from "../modules/attachments";
 import { registerAuditRoutes } from "../modules/audit";
 import { registerAuthRoutes } from "../modules/auth";
 import { registerDashboardRoutes } from "../modules/dashboard";
@@ -7,8 +8,6 @@ import { registerDocsRoutes } from "../modules/docs";
 import { registerExhibitionRoutes } from "../modules/exhibitions";
 import { registerGenerationRoutes } from "../modules/generations";
 import { registerLinktreeRoutes } from "../modules/linktree";
-import { registerMarketRoutes } from "../modules/market";
-import { registerNoticeRoutes } from "../modules/notices";
 import { registerPageViewRoutes } from "../modules/page-views";
 import { registerPublicRoutes } from "../modules/public";
 import { registerRecruitingPlanRoutes } from "../modules/recruiting-plan";
@@ -51,13 +50,12 @@ export const mountDomainRouters = (
     app,
     createDomainRouter((router) => {
       registerGenerationRoutes(router, dependencies);
-      registerNoticeRoutes(router, dependencies);
-      registerMarketRoutes(router, dependencies);
       registerActivityRoutes(router, dependencies);
       registerExhibitionRoutes(router, dependencies);
       registerLinktreeRoutes(router, dependencies);
       registerUserRoutes(router, dependencies);
       registerSiteSettingsRoutes(router, dependencies);
+      registerAttachmentRoutes(router, dependencies);
       registerRecruitingPlanRoutes(router, dependencies);
       registerDashboardRoutes(router, dependencies);
       registerAuditRoutes(router, dependencies);

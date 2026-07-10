@@ -265,7 +265,7 @@ describe("createR2PresignService", () => {
 
     const result = await service.issuePresignedPutUrl({
       actorId: "user-1",
-      resource: "market",
+      resource: "notices",
       slot: "image",
       fileName: "photo.png",
       contentType: "image/png",
@@ -275,7 +275,7 @@ describe("createR2PresignService", () => {
     const publicUrl = new URL(result.publicUrl);
     expect(publicUrl.origin).toBe("https://app.example.com");
     expect(publicUrl.pathname).toBe(
-      "/api/public/media/market/user-1/image/22222222-3333-4444-8555-666666666666-photo.png",
+      "/api/public/media/notices/user-1/image/22222222-3333-4444-8555-666666666666-photo.png",
     );
     expect(publicUrl.searchParams.get("sig")).toMatch(/^[A-Za-z0-9_-]+$/);
     randomUuidSpy.mockRestore();
@@ -290,5 +290,24 @@ describe("createR2PresignService", () => {
     });
     expect(parseManagedObjectKey("activities/user-1/cover/file.png/extra")).toBeNull();
     expect(parseManagedObjectKey("activities/user-1/../file.png")).toBeNull();
+  });
+
+  it("objectKey 파서는 첨부파일(file 슬롯) 경로를 허용한다", () => {
+    expect(parseManagedObjectKey("site/user-1/file/report.pdf")).toEqual({
+      resourcePath: "site",
+      actorId: "user-1",
+      slot: "file",
+      fileToken: "report.pdf",
+    });
+    expect(parseManagedObjectKey("activities/user-1/file/report.pdf")).toEqual({
+      resourcePath: "activities",
+      actorId: "user-1",
+      slot: "file",
+      fileToken: "report.pdf",
+    });
+    // site 경로는 file 슬롯만 허용한다
+    expect(parseManagedObjectKey("site/user-1/cover/report.pdf")).toBeNull();
+    // exhibitions 경로에는 file 슬롯이 없다
+    expect(parseManagedObjectKey("exhibitions/user-1/file/report.pdf")).toBeNull();
   });
 });

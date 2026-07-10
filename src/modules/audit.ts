@@ -18,14 +18,17 @@ const readPermissionResource = (
     | "generation"
     | "activity"
     | "exhibition"
-    | "generation_notice"
-    | "global_notice"
-    | "market_item"
-    | "market_comment"
     | "linktree"
     | "linktree_item"
-    | "user",
-): "generation" | "activity" | "exhibition" | "notice" | "market" | "linktree" | "user" => {
+    | "user"
+    | "attachment",
+):
+  | "generation"
+  | "activity"
+  | "exhibition"
+  | "linktree"
+  | "user"
+  | "site_setting" => {
   switch (resourceType) {
     case "generation":
       return "generation";
@@ -33,17 +36,14 @@ const readPermissionResource = (
       return "activity";
     case "exhibition":
       return "exhibition";
-    case "generation_notice":
-    case "global_notice":
-      return "notice";
-    case "market_item":
-    case "market_comment":
-      return "market";
     case "linktree":
     case "linktree_item":
       return "linktree";
     case "user":
       return "user";
+    case "attachment":
+      // 첨부파일 감사 로그는 사이트 설정과 같은 회장단 권한으로 조회한다
+      return "site_setting";
     default:
       return "generation";
   }

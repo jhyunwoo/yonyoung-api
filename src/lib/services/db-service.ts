@@ -4,18 +4,13 @@ import createDB from "../db";
 import {
 	activities,
 	activityImages,
+	attachments,
 	auditLogs,
 	exhibitions,
 	exhibitionImages,
-	generationNotices,
 	generations,
-	globalNotices,
 	linktree,
 	linktreeItems,
-	marketComments,
-	marketItemImages,
-	marketItems,
-	marketPushSubscriptions,
 	pageViews,
 	recruitingPlans,
 	siteSettings,
@@ -25,6 +20,7 @@ import {
 import {
 	ActivityEntity,
 	ActivityImageEntity,
+	AttachmentEntity,
 	AuditAction,
 	AuditActorEntity,
 	AuditLogEntity,
@@ -32,15 +28,7 @@ import {
 	DataService,
 	ExhibitionEntity,
 	ExhibitionImageEntity,
-	GenerationNoticeEntity,
-	GlobalNoticeEntity,
 	LinktreeEntity,
-	MarketCommentEntity,
-	MarketConditionGrade,
-	MarketItemEntity,
-	MarketItemStatus,
-	MarketSellerEntity,
-	NoticeAuthorEntity,
 	RecruitingPlanEntity,
 	SiteSettingsEntity,
 	UserEntity,
@@ -66,18 +54,6 @@ const isMissingActivityDateRangeColumnsError = (error: unknown): boolean => {
 		error.message.includes("no such column: activities.end_date") ||
 		error.message.includes("no such column: start_date") ||
 		error.message.includes("no such column: end_date")
-	);
-};
-
-const isMissingNoticeImageUrlsColumnsError = (error: unknown): boolean => {
-	if (!(error instanceof Error)) {
-		return false;
-	}
-
-	return (
-		error.message.includes("no such column: generation_notices.image_urls") ||
-		error.message.includes("no such column: global_notices.image_urls") ||
-		error.message.includes("no such column: image_urls")
 	);
 };
 
@@ -132,8 +108,6 @@ const parseChangedFields = (value: string | null | undefined): string[] => {
 const USER_RESOURCE_HISTORY_RESOURCE_TYPES = [
 	"activity",
 	"exhibition",
-	"generation_notice",
-	"global_notice",
 	"linktree",
 	"linktree_item",
 ] as const satisfies readonly UserResourceHistoryResourceType[];
@@ -170,6 +144,33 @@ const toAuditActor = (input: {
 	};
 };
 
+// D1은 쿼리당 바인딩 파라미터를 최대 100개까지만 허용한다 (활성 유저 50명 시점에
+// resourceType(1) + resourceId(50) + createdAt(50) = 101개로 초과해 500이 발생했음).
+// inArray 목록은 고정 파라미터 여유분을 남기고 45개 단위로 쪼개 실행한다.
+const IN_ARRAY_CHUNK_SIZE = 45;
+
+const chunkArray = <T>(
+	items: readonly T[],
+	chunkSize: number = IN_ARRAY_CHUNK_SIZE,
+): T[][] => {
+	const chunks: T[][] = [];
+	for (let index = 0; index < items.length; index += chunkSize) {
+		chunks.push(items.slice(index, index + chunkSize));
+	}
+	return chunks;
+};
+
+const selectInChunks = async <TItem, TRow>(
+	items: readonly TItem[],
+	queryChunk: (chunk: TItem[]) => Promise<TRow[]>,
+): Promise<TRow[]> => {
+	const rows: TRow[] = [];
+	for (const chunk of chunkArray(items)) {
+		rows.push(...(await queryChunk(chunk)));
+	}
+	return rows;
+};
+
 const listLatestAuditActorsByResourceId = async (
 	db: ReturnType<typeof createDB>,
 	resourceType: AuditResourceType,
@@ -187,19 +188,23 @@ const listLatestAuditActorsByResourceId = async (
 		result[resourceId] = null;
 	}
 
-	const latestCreatedAtRows = await db
-		.select({
-			resourceId: auditLogs.resourceId,
-			latestCreatedAt: sql<number>`max(${auditLogs.createdAt})`,
-		})
-		.from(auditLogs)
-		.where(
-			and(
-				eq(auditLogs.resourceType, resourceType),
-				inArray(auditLogs.resourceId, normalizedResourceIds),
-			),
-		)
-		.groupBy(auditLogs.resourceId);
+	const latestCreatedAtRows = await selectInChunks(
+		normalizedResourceIds,
+		(chunk) =>
+			db
+				.select({
+					resourceId: auditLogs.resourceId,
+					latestCreatedAt: sql<number>`max(${auditLogs.createdAt})`,
+				})
+				.from(auditLogs)
+				.where(
+					and(
+						eq(auditLogs.resourceType, resourceType),
+						inArray(auditLogs.resourceId, chunk),
+					),
+				)
+				.groupBy(auditLogs.resourceId),
+	);
 
 	if (latestCreatedAtRows.length === 0) {
 		return result;
@@ -213,34 +218,46 @@ const listLatestAuditActorsByResourceId = async (
 		);
 	}
 
-	const latestCreatedAtValues = Array.from(
-		new Set(Array.from(latestCreatedAtByResourceId.values())),
-	).map((value) => new Date(value));
-
-	const latestRows = await db
-		.select({
-			id: auditLogs.id,
-			resourceId: auditLogs.resourceId,
-			actorId: auditLogs.actorId,
-			actorName: auditLogs.actorName,
-			actorFamilyName: user.familyName,
-			actorGivenName: user.givenName,
-			actorRole: auditLogs.actorRole,
-			createdAt: auditLogs.createdAt,
-		})
-		.from(auditLogs)
-		.leftJoin(
-			user,
-			and(eq(auditLogs.actorId, user.id), isNull(user.deletedAt)),
-		)
-		.where(
-			and(
-				eq(auditLogs.resourceType, resourceType),
-				inArray(auditLogs.resourceId, normalizedResourceIds),
-				inArray(auditLogs.createdAt, latestCreatedAtValues),
+	// resourceId 청크마다 해당 청크의 createdAt 값만 바인딩하므로
+	// 쿼리당 파라미터는 1 + 45 + 45 = 91개를 넘지 않는다.
+	const latestRows = await selectInChunks(normalizedResourceIds, (chunk) => {
+		const chunkCreatedAtValues = Array.from(
+			new Set(
+				chunk
+					.map((resourceId) => latestCreatedAtByResourceId.get(resourceId))
+					.filter((value): value is number => value !== undefined),
 			),
-		)
-		.orderBy(desc(auditLogs.createdAt), desc(auditLogs.id));
+		).map((value) => new Date(value));
+
+		if (chunkCreatedAtValues.length === 0) {
+			return Promise.resolve([]);
+		}
+
+		return db
+			.select({
+				id: auditLogs.id,
+				resourceId: auditLogs.resourceId,
+				actorId: auditLogs.actorId,
+				actorName: auditLogs.actorName,
+				actorFamilyName: user.familyName,
+				actorGivenName: user.givenName,
+				actorRole: auditLogs.actorRole,
+				createdAt: auditLogs.createdAt,
+			})
+			.from(auditLogs)
+			.leftJoin(
+				user,
+				and(eq(auditLogs.actorId, user.id), isNull(user.deletedAt)),
+			)
+			.where(
+				and(
+					eq(auditLogs.resourceType, resourceType),
+					inArray(auditLogs.resourceId, chunk),
+					inArray(auditLogs.createdAt, chunkCreatedAtValues),
+				),
+			)
+			.orderBy(desc(auditLogs.createdAt), desc(auditLogs.id));
+	});
 
 	const resolvedResourceIds = new Set<string>();
 	for (const row of latestRows) {
@@ -415,16 +432,18 @@ const mapActivitiesWithImages = async (
 			row,
 		) => row.id,
 	);
-	const imageRows = await db
-		.select()
-		.from(activityImages)
-		.where(
-			and(
-				inArray(activityImages.activityId, ids),
-				isNull(activityImages.deletedAt),
-			),
-		)
-		.orderBy(asc(activityImages.sortOrder));
+	const imageRows = await selectInChunks(ids, (chunk) =>
+		db
+			.select()
+			.from(activityImages)
+			.where(
+				and(
+					inArray(activityImages.activityId, chunk),
+					isNull(activityImages.deletedAt),
+				),
+			)
+			.orderBy(asc(activityImages.sortOrder)),
+	);
 
 	const imageMap = new Map<string, ActivityImageEntity[]>();
 	for (const imageRow of imageRows) {
@@ -470,16 +489,18 @@ const mapExhibitionsWithImages = async (
 			row,
 		) => row.id,
 	);
-	const imageRows = await db
-		.select()
-		.from(exhibitionImages)
-		.where(
-			and(
-				inArray(exhibitionImages.exhibitionId, ids),
-				isNull(exhibitionImages.deletedAt),
-			),
-		)
-		.orderBy(asc(exhibitionImages.sortOrder));
+	const imageRows = await selectInChunks(ids, (chunk) =>
+		db
+			.select()
+			.from(exhibitionImages)
+			.where(
+				and(
+					inArray(exhibitionImages.exhibitionId, chunk),
+					isNull(exhibitionImages.deletedAt),
+				),
+			)
+			.orderBy(asc(exhibitionImages.sortOrder)),
+	);
 
 	const imageMap = new Map<string, ExhibitionImageEntity[]>();
 	for (const imageRow of imageRows) {
@@ -525,15 +546,17 @@ const mapLinktreesWithItems = async (
 			row,
 		) => row.id,
 	);
-	const itemRows = await db
-		.select()
-		.from(linktreeItems)
-		.where(
-			and(
-				inArray(linktreeItems.linktreeId, ids),
-				isNull(linktreeItems.deletedAt),
+	const itemRows = await selectInChunks(ids, (chunk) =>
+		db
+			.select()
+			.from(linktreeItems)
+			.where(
+				and(
+					inArray(linktreeItems.linktreeId, chunk),
+					isNull(linktreeItems.deletedAt),
+				),
 			),
-		);
+	);
 
 	const itemMap = new Map<string, (typeof linktreeItems.$inferSelect)[]>();
 	for (const item of itemRows) {
@@ -565,42 +588,6 @@ const mapLinktreesWithItems = async (
 	);
 };
 
-type NoticeListRow = {
-	id: string;
-	generationId?: string;
-	title: string;
-	content: string;
-	imageUrls: string;
-	createdAt: Date;
-	updatedAt: Date;
-	authorId: string;
-	authorName: string;
-	authorFamilyName: string | null;
-	authorGivenName: string | null;
-	authorImage: string | null;
-	authorRole: string | null;
-};
-
-const parseNoticeImageUrls = (value: string | null | undefined): string[] => {
-	if (!value) {
-		return [];
-	}
-
-	try {
-		const parsed = JSON.parse(value) as unknown;
-		if (!Array.isArray(parsed)) {
-			return [];
-		}
-
-		return parsed.filter((item): item is string => typeof item === "string");
-	} catch {
-		return [];
-	}
-};
-
-const serializeNoticeImageUrls = (value: string[] | undefined): string =>
-	JSON.stringify(value ?? []);
-
 const parseShowcaseImageUrls = (value: string | null | undefined): string[] => {
 	if (!value) {
 		return [];
@@ -621,193 +608,6 @@ const parseShowcaseImageUrls = (value: string | null | undefined): string[] => {
 const serializeShowcaseImageUrls = (value: string[] | undefined): string =>
 	JSON.stringify(value ?? []);
 
-const toNoticeAuthor = (row: NoticeListRow): NoticeAuthorEntity => ({
-	id: row.authorId,
-	name: row.authorName,
-	familyName: row.authorFamilyName,
-	givenName: row.authorGivenName,
-	image: row.authorImage,
-	role: row.authorRole,
-});
-
-const toGenerationNoticeEntity = (
-	row: NoticeListRow,
-	updatedBy: AuditActorEntity | null,
-): GenerationNoticeEntity => ({
-	id: row.id,
-	generationId: row.generationId!,
-	title: row.title,
-	content: row.content,
-	imageUrls: parseNoticeImageUrls(row.imageUrls),
-	author: toNoticeAuthor(row),
-	createdAt: row.createdAt,
-	updatedAt: row.updatedAt,
-	updatedBy,
-});
-
-const toGlobalNoticeEntity = (
-	row: NoticeListRow,
-	updatedBy: AuditActorEntity | null,
-): GlobalNoticeEntity => ({
-	id: row.id,
-	title: row.title,
-	content: row.content,
-	imageUrls: parseNoticeImageUrls(row.imageUrls),
-	author: toNoticeAuthor(row),
-	createdAt: row.createdAt,
-	updatedAt: row.updatedAt,
-	updatedBy,
-});
-
-type MarketItemRow = {
-	id: string;
-	sellerId: string;
-	name: string;
-	manufacturer: string | null;
-	productCode: string | null;
-	conditionGrade: string | null;
-	description: string | null;
-	price: number;
-	status: string;
-	createdAt: Date;
-	updatedAt: Date;
-	sellerName: string;
-	sellerFamilyName: string | null;
-	sellerGivenName: string | null;
-	sellerImage: string | null;
-	sellerRole: string | null;
-};
-
-type MarketCommentRow = {
-	id: string;
-	itemId: string;
-	content: string;
-	createdAt: Date;
-	updatedAt: Date;
-	authorId: string;
-	authorName: string;
-	authorFamilyName: string | null;
-	authorGivenName: string | null;
-	authorImage: string | null;
-	authorRole: string | null;
-};
-
-const parseMarketItemStatus = (
-	value: string | null | undefined,
-): MarketItemStatus => {
-	if (value === "reserved" || value === "sold") {
-		return value;
-	}
-	return "selling";
-};
-
-const parseMarketConditionGrade = (
-	value: string | null | undefined,
-): MarketConditionGrade | null => {
-	if (value === "A" || value === "B" || value === "C" || value === "D") {
-		return value;
-	}
-	return null;
-};
-
-const mapMarketSeller = (input: {
-	id: string;
-	name: string;
-	familyName: string | null;
-	givenName: string | null;
-	image: string | null;
-	role: string | null;
-}): MarketSellerEntity => ({
-	id: input.id,
-	name: input.name,
-	familyName: input.familyName,
-	givenName: input.givenName,
-	image: input.image,
-	role: input.role,
-});
-
-const mapMarketItemsWithImages = async (
-	db: ReturnType<typeof createDB>,
-	rows: MarketItemRow[],
-): Promise<MarketItemEntity[]> => {
-	if (rows.length === 0) {
-		return [];
-	}
-
-	const itemIds = rows.map((row) => row.id);
-	const imageRows = await db
-		.select({
-			itemId: marketItemImages.itemId,
-			imageUrl: marketItemImages.imageUrl,
-			sortOrder: marketItemImages.sortOrder,
-		})
-		.from(marketItemImages)
-		.where(
-			and(
-				inArray(marketItemImages.itemId, itemIds),
-				isNull(marketItemImages.deletedAt),
-			),
-		)
-		.orderBy(asc(marketItemImages.sortOrder));
-
-	const imagesByItemId = new Map<string, string[]>();
-	for (const row of imageRows) {
-		const current = imagesByItemId.get(row.itemId) ?? [];
-		current.push(row.imageUrl);
-		imagesByItemId.set(row.itemId, current);
-	}
-
-	const updatedByMap = await listLatestAuditActorsByResourceId(
-		db,
-		"market_item",
-		itemIds,
-	);
-
-	return rows.map((row) => ({
-		id: row.id,
-		sellerId: row.sellerId,
-		name: row.name,
-		imageUrls: imagesByItemId.get(row.id) ?? [],
-		manufacturer: row.manufacturer,
-		productCode: row.productCode,
-		conditionGrade: parseMarketConditionGrade(row.conditionGrade),
-		description: row.description,
-		price: row.price,
-		status: parseMarketItemStatus(row.status),
-		seller: mapMarketSeller({
-			id: row.sellerId,
-			name: row.sellerName,
-			familyName: row.sellerFamilyName,
-			givenName: row.sellerGivenName,
-			image: row.sellerImage,
-			role: row.sellerRole,
-		}),
-		createdAt: row.createdAt,
-		updatedAt: row.updatedAt,
-		updatedBy: updatedByMap[row.id] ?? null,
-	}));
-};
-
-const toMarketCommentEntity = (
-	row: MarketCommentRow,
-	updatedBy: AuditActorEntity | null,
-): MarketCommentEntity => ({
-	id: row.id,
-	itemId: row.itemId,
-	author: mapMarketSeller({
-		id: row.authorId,
-		name: row.authorName,
-		familyName: row.authorFamilyName,
-		givenName: row.authorGivenName,
-		image: row.authorImage,
-		role: row.authorRole,
-	}),
-	content: row.content,
-	createdAt: row.createdAt,
-	updatedAt: row.updatedAt,
-	updatedBy,
-});
-
 const dedupeGenerationIds = (generationIds: string[]): string[] => {
 	return Array.from(
 		new Set(
@@ -827,23 +627,25 @@ const mapUsersWithGenerations = async (
 	const userIds = rows.map((row) => row.id);
 	const linkRows = await (async () => {
 		try {
-			return await db
-				.select({
-					userId: userGenerations.userId,
-					generationId: userGenerations.generationId,
-				})
-				.from(userGenerations)
-				.innerJoin(
-					generations,
-					eq(userGenerations.generationId, generations.id),
-				)
-				.where(
-					and(
-						inArray(userGenerations.userId, userIds),
-						isNull(generations.deletedAt),
-					),
-				)
-				.orderBy(asc(userGenerations.userId), desc(generations.sortOrder));
+			return await selectInChunks(userIds, (chunk) =>
+				db
+					.select({
+						userId: userGenerations.userId,
+						generationId: userGenerations.generationId,
+					})
+					.from(userGenerations)
+					.innerJoin(
+						generations,
+						eq(userGenerations.generationId, generations.id),
+					)
+					.where(
+						and(
+							inArray(userGenerations.userId, chunk),
+							isNull(generations.deletedAt),
+						),
+					)
+					.orderBy(asc(userGenerations.userId), desc(generations.sortOrder)),
+			);
 		} catch (error) {
 			if (isMissingUserGenerationsTableError(error)) {
 				return [] as Array<{ userId: string; generationId: string }>;
@@ -961,6 +763,23 @@ const replaceUserGenerations = async (
 	};
 };
 
+const toAttachmentEntity = (
+	row: typeof attachments.$inferSelect,
+): AttachmentEntity => ({
+	id: row.id,
+	scope: row.scope === "site_donate" ? "site_donate" : "activity",
+	resourceId: row.resourceId,
+	title: row.title,
+	fileUrl: row.fileUrl,
+	fileName: row.fileName,
+	fileSize: row.fileSize,
+	mimeType: row.mimeType,
+	linkUrl: row.linkUrl,
+	sortOrder: row.sortOrder,
+	createdAt: row.createdAt,
+	updatedAt: row.updatedAt,
+});
+
 const SITE_SETTINGS_SINGLETON_ID = "default";
 
 const normalizeInstagramId = (value: string): string => {
@@ -1051,6 +870,15 @@ export const createDbDataService = (database: D1Database): DataService => {
 		});
 	};
 
+	const findAttachmentById = async (
+		id: string,
+	): Promise<AttachmentEntity | null> => {
+		const row = await db.query.attachments.findFirst({
+			where: and(eq(attachments.id, id), isNull(attachments.deletedAt)),
+		});
+		return row ? toAttachmentEntity(row) : null;
+	};
+
 	const purgeGeneration = async (generationId: string) => {
 		await db
 			.delete(activities)
@@ -1058,9 +886,6 @@ export const createDbDataService = (database: D1Database): DataService => {
 		await db
 			.delete(exhibitions)
 			.where(eq(exhibitions.generationId, generationId));
-		await db
-			.delete(generationNotices)
-			.where(eq(generationNotices.generationId, generationId));
 		await db.delete(generations).where(eq(generations.id, generationId));
 	};
 
@@ -2325,958 +2150,94 @@ export const createDbDataService = (database: D1Database): DataService => {
 			return true;
 		},
 
-		async listGenerationNotices(generationId) {
-			const rows = await (async () => {
-				try {
-					return await db
-						.select({
-							id: generationNotices.id,
-							generationId: generationNotices.generationId,
-							title: generationNotices.title,
-							content: generationNotices.content,
-							imageUrls: generationNotices.imageUrls,
-							createdAt: generationNotices.createdAt,
-							updatedAt: generationNotices.updatedAt,
-							authorId: user.id,
-							authorName: user.name,
-							authorFamilyName: user.familyName,
-							authorGivenName: user.givenName,
-							authorImage: user.image,
-							authorRole: user.role,
-						})
-						.from(generationNotices)
-						.innerJoin(user, eq(generationNotices.authorId, user.id))
-						.where(
-							and(
-								eq(generationNotices.generationId, generationId),
-								isNull(generationNotices.deletedAt),
-								isNull(user.deletedAt),
-							),
-						)
-						.orderBy(desc(generationNotices.createdAt));
-				} catch (error) {
-					if (!isMissingNoticeImageUrlsColumnsError(error)) {
-						throw error;
-					}
-
-					return db
-						.select({
-							id: generationNotices.id,
-							generationId: generationNotices.generationId,
-							title: generationNotices.title,
-							content: generationNotices.content,
-							imageUrls: sql<string>`'[]'`,
-							createdAt: generationNotices.createdAt,
-							updatedAt: generationNotices.updatedAt,
-							authorId: user.id,
-							authorName: user.name,
-							authorFamilyName: user.familyName,
-							authorGivenName: user.givenName,
-							authorImage: user.image,
-							authorRole: user.role,
-						})
-						.from(generationNotices)
-						.innerJoin(user, eq(generationNotices.authorId, user.id))
-						.where(
-							and(
-								eq(generationNotices.generationId, generationId),
-								isNull(generationNotices.deletedAt),
-								isNull(user.deletedAt),
-							),
-						)
-						.orderBy(desc(generationNotices.createdAt));
-				}
-			})();
-
-			const updatedByMap = await listLatestAuditActorsByResourceId(
-				db,
-				"generation_notice",
-				rows.map((row) => row.id),
-			);
-			return rows.map((row) =>
-				toGenerationNoticeEntity(row, updatedByMap[row.id] ?? null),
-			);
-		},
-
-		async createGenerationNotice(generationId, input) {
-			const [generationExists, authorExists] = await Promise.all([
-				db.query.generations.findFirst({
-					where: and(
-						eq(generations.id, generationId),
-						isNull(generations.deletedAt),
-					),
-					columns: { id: true },
-				}),
-				db.query.user.findFirst({
-					where: and(eq(user.id, input.authorId), isNull(user.deletedAt)),
-					columns: { id: true },
-				}),
-			]);
-
-			if (!generationExists || !authorExists) {
-				return null;
-			}
-
-			const id = crypto.randomUUID();
-			await db.insert(generationNotices).values({
-				id,
-				generationId,
-				title: input.title,
-				content: input.content,
-				imageUrls: serializeNoticeImageUrls(input.imageUrls),
-				authorId: input.authorId,
-			});
-
-			return this.getGenerationNoticeById(generationId, id);
-		},
-
-		async getGenerationNoticeById(generationId, noticeId) {
-			const row = await (async () => {
-				try {
-					return await db
-						.select({
-							id: generationNotices.id,
-							generationId: generationNotices.generationId,
-							title: generationNotices.title,
-							content: generationNotices.content,
-							imageUrls: generationNotices.imageUrls,
-							createdAt: generationNotices.createdAt,
-							updatedAt: generationNotices.updatedAt,
-							authorId: user.id,
-							authorName: user.name,
-							authorFamilyName: user.familyName,
-							authorGivenName: user.givenName,
-							authorImage: user.image,
-							authorRole: user.role,
-						})
-						.from(generationNotices)
-						.innerJoin(user, eq(generationNotices.authorId, user.id))
-						.where(
-							and(
-								eq(generationNotices.id, noticeId),
-								eq(generationNotices.generationId, generationId),
-								isNull(generationNotices.deletedAt),
-								isNull(user.deletedAt),
-							),
-						)
-						.limit(1);
-				} catch (error) {
-					if (!isMissingNoticeImageUrlsColumnsError(error)) {
-						throw error;
-					}
-
-					return db
-						.select({
-							id: generationNotices.id,
-							generationId: generationNotices.generationId,
-							title: generationNotices.title,
-							content: generationNotices.content,
-							imageUrls: sql<string>`'[]'`,
-							createdAt: generationNotices.createdAt,
-							updatedAt: generationNotices.updatedAt,
-							authorId: user.id,
-							authorName: user.name,
-							authorFamilyName: user.familyName,
-							authorGivenName: user.givenName,
-							authorImage: user.image,
-							authorRole: user.role,
-						})
-						.from(generationNotices)
-						.innerJoin(user, eq(generationNotices.authorId, user.id))
-						.where(
-							and(
-								eq(generationNotices.id, noticeId),
-								eq(generationNotices.generationId, generationId),
-								isNull(generationNotices.deletedAt),
-								isNull(user.deletedAt),
-							),
-						)
-						.limit(1);
-				}
-			})();
-
-			if (!row[0]) {
-				return null;
-			}
-
-			const updatedBy = await this.getLatestAuditActor(
-				"generation_notice",
-				noticeId,
-			);
-			return toGenerationNoticeEntity(row[0], updatedBy);
-		},
-
-		async updateGenerationNotice(generationId, noticeId, input) {
-			const exists = await db.query.generationNotices.findFirst({
-				where: and(
-					eq(generationNotices.id, noticeId),
-					eq(generationNotices.generationId, generationId),
-					isNull(generationNotices.deletedAt),
-				),
-				columns: { id: true },
-			});
-
-			if (!exists) {
-				return null;
-			}
-
-			await db
-				.update(generationNotices)
-				.set({
-					...(input.title !== undefined ? { title: input.title } : {}),
-					...(input.content !== undefined ? { content: input.content } : {}),
-					...(input.imageUrls !== undefined
-						? { imageUrls: serializeNoticeImageUrls(input.imageUrls) }
-						: {}),
-					updatedAt: new Date(),
-				})
-				.where(
-					and(
-						eq(generationNotices.id, noticeId),
-						eq(generationNotices.generationId, generationId),
-						isNull(generationNotices.deletedAt),
-					),
-				);
-
-			return this.getGenerationNoticeById(generationId, noticeId);
-		},
-
-		async deleteGenerationNotice(generationId, noticeId) {
-			const exists = await db.query.generationNotices.findFirst({
-				where: and(
-					eq(generationNotices.id, noticeId),
-					eq(generationNotices.generationId, generationId),
-					isNull(generationNotices.deletedAt),
-				),
-				columns: { id: true },
-			});
-
-			if (!exists) {
-				return false;
-			}
-
-			await db
-				.update(generationNotices)
-				.set({
-					deletedAt: new Date(),
-					updatedAt: new Date(),
-				})
-				.where(
-					and(
-						eq(generationNotices.id, noticeId),
-						eq(generationNotices.generationId, generationId),
-						isNull(generationNotices.deletedAt),
-					),
-				);
-
-			return true;
-		},
-
-		async listGlobalNotices() {
-			const rows = await (async () => {
-				try {
-					return await db
-						.select({
-							id: globalNotices.id,
-							title: globalNotices.title,
-							content: globalNotices.content,
-							imageUrls: globalNotices.imageUrls,
-							createdAt: globalNotices.createdAt,
-							updatedAt: globalNotices.updatedAt,
-							authorId: user.id,
-							authorName: user.name,
-							authorFamilyName: user.familyName,
-							authorGivenName: user.givenName,
-							authorImage: user.image,
-							authorRole: user.role,
-						})
-						.from(globalNotices)
-						.innerJoin(user, eq(globalNotices.authorId, user.id))
-						.where(and(isNull(globalNotices.deletedAt), isNull(user.deletedAt)))
-						.orderBy(desc(globalNotices.createdAt));
-				} catch (error) {
-					if (!isMissingNoticeImageUrlsColumnsError(error)) {
-						throw error;
-					}
-
-					return db
-						.select({
-							id: globalNotices.id,
-							title: globalNotices.title,
-							content: globalNotices.content,
-							imageUrls: sql<string>`'[]'`,
-							createdAt: globalNotices.createdAt,
-							updatedAt: globalNotices.updatedAt,
-							authorId: user.id,
-							authorName: user.name,
-							authorFamilyName: user.familyName,
-							authorGivenName: user.givenName,
-							authorImage: user.image,
-							authorRole: user.role,
-						})
-						.from(globalNotices)
-						.innerJoin(user, eq(globalNotices.authorId, user.id))
-						.where(and(isNull(globalNotices.deletedAt), isNull(user.deletedAt)))
-						.orderBy(desc(globalNotices.createdAt));
-				}
-			})();
-
-			const updatedByMap = await listLatestAuditActorsByResourceId(
-				db,
-				"global_notice",
-				rows.map((row) => row.id),
-			);
-			return rows.map((row) =>
-				toGlobalNoticeEntity(row, updatedByMap[row.id] ?? null),
-			);
-		},
-
-		async createGlobalNotice(input) {
-			const authorExists = await db.query.user.findFirst({
-				where: and(eq(user.id, input.authorId), isNull(user.deletedAt)),
-				columns: { id: true },
-			});
-
-			if (!authorExists) {
-				return null;
-			}
-
-			const id = crypto.randomUUID();
-			await db.insert(globalNotices).values({
-				id,
-				title: input.title,
-				content: input.content,
-				imageUrls: serializeNoticeImageUrls(input.imageUrls),
-				authorId: input.authorId,
-			});
-
-			return this.getGlobalNoticeById(id);
-		},
-
-		async getGlobalNoticeById(noticeId) {
-			const row = await (async () => {
-				try {
-					return await db
-						.select({
-							id: globalNotices.id,
-							title: globalNotices.title,
-							content: globalNotices.content,
-							imageUrls: globalNotices.imageUrls,
-							createdAt: globalNotices.createdAt,
-							updatedAt: globalNotices.updatedAt,
-							authorId: user.id,
-							authorName: user.name,
-							authorFamilyName: user.familyName,
-							authorGivenName: user.givenName,
-							authorImage: user.image,
-							authorRole: user.role,
-						})
-						.from(globalNotices)
-						.innerJoin(user, eq(globalNotices.authorId, user.id))
-						.where(
-							and(
-								eq(globalNotices.id, noticeId),
-								isNull(globalNotices.deletedAt),
-								isNull(user.deletedAt),
-							),
-						)
-						.limit(1);
-				} catch (error) {
-					if (!isMissingNoticeImageUrlsColumnsError(error)) {
-						throw error;
-					}
-
-					return db
-						.select({
-							id: globalNotices.id,
-							title: globalNotices.title,
-							content: globalNotices.content,
-							imageUrls: sql<string>`'[]'`,
-							createdAt: globalNotices.createdAt,
-							updatedAt: globalNotices.updatedAt,
-							authorId: user.id,
-							authorName: user.name,
-							authorFamilyName: user.familyName,
-							authorGivenName: user.givenName,
-							authorImage: user.image,
-							authorRole: user.role,
-						})
-						.from(globalNotices)
-						.innerJoin(user, eq(globalNotices.authorId, user.id))
-						.where(
-							and(
-								eq(globalNotices.id, noticeId),
-								isNull(globalNotices.deletedAt),
-								isNull(user.deletedAt),
-							),
-						)
-						.limit(1);
-				}
-			})();
-
-			if (!row[0]) {
-				return null;
-			}
-
-			const updatedBy = await this.getLatestAuditActor(
-				"global_notice",
-				noticeId,
-			);
-			return toGlobalNoticeEntity(row[0], updatedBy);
-		},
-
-		async updateGlobalNotice(noticeId, input) {
-			const exists = await db.query.globalNotices.findFirst({
-				where: and(
-					eq(globalNotices.id, noticeId),
-					isNull(globalNotices.deletedAt),
-				),
-				columns: { id: true },
-			});
-
-			if (!exists) {
-				return null;
-			}
-
-			await db
-				.update(globalNotices)
-				.set({
-					...(input.title !== undefined ? { title: input.title } : {}),
-					...(input.content !== undefined ? { content: input.content } : {}),
-					...(input.imageUrls !== undefined
-						? { imageUrls: serializeNoticeImageUrls(input.imageUrls) }
-						: {}),
-					updatedAt: new Date(),
-				})
-				.where(
-					and(eq(globalNotices.id, noticeId), isNull(globalNotices.deletedAt)),
-				);
-
-			return this.getGlobalNoticeById(noticeId);
-		},
-
-		async deleteGlobalNotice(noticeId) {
-			const exists = await db.query.globalNotices.findFirst({
-				where: and(
-					eq(globalNotices.id, noticeId),
-					isNull(globalNotices.deletedAt),
-				),
-				columns: { id: true },
-			});
-
-			if (!exists) {
-				return false;
-			}
-
-			await db
-				.update(globalNotices)
-				.set({
-					deletedAt: new Date(),
-					updatedAt: new Date(),
-				})
-				.where(
-					and(eq(globalNotices.id, noticeId), isNull(globalNotices.deletedAt)),
-				);
-
-			return true;
-		},
-
-		async listMarketItems(input) {
-			const safePage =
-				typeof input.page === "number" &&
-				Number.isFinite(input.page) &&
-				input.page > 0
-					? Math.floor(input.page)
-					: 1;
-			const safePageSize =
-				typeof input.pageSize === "number" &&
-				Number.isFinite(input.pageSize) &&
-				input.pageSize > 0
-					? Math.min(100, Math.floor(input.pageSize))
-					: 20;
-
+		async listAttachments(scope, resourceId) {
 			const conditions = [
-				isNull(marketItems.deletedAt),
-				isNull(user.deletedAt),
+				eq(attachments.scope, scope),
+				isNull(attachments.deletedAt),
+				resourceId
+					? eq(attachments.resourceId, resourceId)
+					: isNull(attachments.resourceId),
 			];
-			if (input.status) {
-				conditions.push(eq(marketItems.status, input.status));
-			}
-			if (input.sellerId) {
-				conditions.push(eq(marketItems.sellerId, input.sellerId));
-			}
 
 			const rows = await db
-				.select({
-					id: marketItems.id,
-					sellerId: marketItems.sellerId,
-					name: marketItems.name,
-					manufacturer: marketItems.manufacturer,
-					productCode: marketItems.productCode,
-					conditionGrade: marketItems.conditionGrade,
-					description: marketItems.description,
-					price: marketItems.price,
-					status: marketItems.status,
-					createdAt: marketItems.createdAt,
-					updatedAt: marketItems.updatedAt,
-					sellerName: user.name,
-					sellerFamilyName: user.familyName,
-					sellerGivenName: user.givenName,
-					sellerImage: user.image,
-					sellerRole: user.role,
-				})
-				.from(marketItems)
-				.innerJoin(user, eq(marketItems.sellerId, user.id))
+				.select()
+				.from(attachments)
 				.where(and(...conditions))
-				.orderBy(desc(marketItems.createdAt))
-				.limit(safePageSize)
-				.offset((safePage - 1) * safePageSize);
+				.orderBy(asc(attachments.sortOrder), asc(attachments.createdAt));
 
-			return mapMarketItemsWithImages(db, rows);
+			return rows.map(toAttachmentEntity);
 		},
 
-		async createMarketItem(input) {
-			const seller = await db.query.user.findFirst({
-				where: and(eq(user.id, input.sellerId), isNull(user.deletedAt)),
-				columns: { id: true },
-			});
-			if (!seller) {
-				return null;
-			}
-
-			const itemId = crypto.randomUUID();
-			const now = new Date();
-			await db.insert(marketItems).values({
-				id: itemId,
-				sellerId: input.sellerId,
-				name: input.name,
-				manufacturer: input.manufacturer,
-				productCode: input.productCode,
-				conditionGrade: input.conditionGrade,
-				description: input.description,
-				price: input.price,
-				status: "selling",
-				createdAt: now,
-				updatedAt: now,
-			});
-
-			if (input.imageUrls.length > 0) {
-				await db.insert(marketItemImages).values(
-					input.imageUrls.map((imageUrl, index) => ({
-						id: crypto.randomUUID(),
-						itemId,
-						imageUrl,
-						sortOrder: index,
-						createdAt: now,
-						updatedAt: now,
-					})),
-				);
-			}
-
-			return this.getMarketItemById(itemId);
+		async getAttachmentById(id) {
+			return findAttachmentById(id);
 		},
 
-		async getMarketItemById(id) {
-			const rows = await db
-				.select({
-					id: marketItems.id,
-					sellerId: marketItems.sellerId,
-					name: marketItems.name,
-					manufacturer: marketItems.manufacturer,
-					productCode: marketItems.productCode,
-					conditionGrade: marketItems.conditionGrade,
-					description: marketItems.description,
-					price: marketItems.price,
-					status: marketItems.status,
-					createdAt: marketItems.createdAt,
-					updatedAt: marketItems.updatedAt,
-					sellerName: user.name,
-					sellerFamilyName: user.familyName,
-					sellerGivenName: user.givenName,
-					sellerImage: user.image,
-					sellerRole: user.role,
-				})
-				.from(marketItems)
-				.innerJoin(user, eq(marketItems.sellerId, user.id))
-				.where(
-					and(
-						eq(marketItems.id, id),
-						isNull(marketItems.deletedAt),
-						isNull(user.deletedAt),
+		async addAttachment(input) {
+			if (input.scope === "activity") {
+				if (!input.resourceId) {
+					return null;
+				}
+
+				const parentActivity = await db.query.activities.findFirst({
+					where: and(
+						eq(activities.id, input.resourceId),
+						isNull(activities.deletedAt),
 					),
-				)
-				.limit(1);
-
-			if (!rows[0]) {
-				return null;
-			}
-
-			const mapped = await mapMarketItemsWithImages(db, [rows[0]]);
-			return mapped[0] ?? null;
-		},
-
-		async updateMarketItem(id, input) {
-			const exists = await db.query.marketItems.findFirst({
-				where: and(eq(marketItems.id, id), isNull(marketItems.deletedAt)),
-				columns: { id: true },
-			});
-			if (!exists) {
-				return null;
-			}
-
-			await db
-				.update(marketItems)
-				.set({
-					...(input.name !== undefined ? { name: input.name } : {}),
-					...(input.manufacturer !== undefined
-						? { manufacturer: input.manufacturer }
-						: {}),
-					...(input.productCode !== undefined
-						? { productCode: input.productCode }
-						: {}),
-					...(input.conditionGrade !== undefined
-						? { conditionGrade: input.conditionGrade }
-						: {}),
-					...(input.description !== undefined
-						? { description: input.description }
-						: {}),
-					...(input.price !== undefined ? { price: input.price } : {}),
-					updatedAt: new Date(),
-				})
-				.where(and(eq(marketItems.id, id), isNull(marketItems.deletedAt)));
-
-			if (input.imageUrls !== undefined) {
-				const now = new Date();
-				await db
-					.update(marketItemImages)
-					.set({
-						deletedAt: now,
-						updatedAt: now,
-					})
-					.where(
-						and(
-							eq(marketItemImages.itemId, id),
-							isNull(marketItemImages.deletedAt),
-						),
-					);
-
-				if (input.imageUrls.length > 0) {
-					await db.insert(marketItemImages).values(
-						input.imageUrls.map((imageUrl, index) => ({
-							id: crypto.randomUUID(),
-							itemId: id,
-							imageUrl,
-							sortOrder: index,
-							createdAt: now,
-							updatedAt: now,
-						})),
-					);
+				});
+				if (!parentActivity) {
+					return null;
 				}
 			}
 
-			return this.getMarketItemById(id);
+			const id = crypto.randomUUID();
+			await db.insert(attachments).values({
+				id,
+				scope: input.scope,
+				resourceId: input.scope === "site_donate" ? null : input.resourceId,
+				title: input.title,
+				fileUrl: input.fileUrl,
+				fileName: input.fileName,
+				fileSize: input.fileSize,
+				mimeType: input.mimeType,
+				linkUrl: input.linkUrl,
+				sortOrder: input.sortOrder,
+			});
+
+			return findAttachmentById(id);
 		},
 
-		async updateMarketItemStatus(id, status) {
-			const exists = await db.query.marketItems.findFirst({
-				where: and(eq(marketItems.id, id), isNull(marketItems.deletedAt)),
-				columns: { id: true },
-			});
-			if (!exists) {
+		async updateAttachment(id, input) {
+			const existing = await findAttachmentById(id);
+			if (!existing) {
 				return null;
 			}
 
 			await db
-				.update(marketItems)
+				.update(attachments)
 				.set({
-					status,
+					...(input.title !== undefined ? { title: input.title } : {}),
+					...(input.sortOrder !== undefined
+						? { sortOrder: input.sortOrder }
+						: {}),
 					updatedAt: new Date(),
 				})
-				.where(and(eq(marketItems.id, id), isNull(marketItems.deletedAt)));
+				.where(and(eq(attachments.id, id), isNull(attachments.deletedAt)));
 
-			return this.getMarketItemById(id);
+			return findAttachmentById(id);
 		},
 
-		async deleteMarketItem(id) {
-			const exists = await db.query.marketItems.findFirst({
-				where: and(eq(marketItems.id, id), isNull(marketItems.deletedAt)),
-				columns: { id: true },
-			});
-			if (!exists) {
-				return false;
-			}
-
-			const now = new Date();
-			await db
-				.update(marketItems)
-				.set({
-					deletedAt: now,
-					updatedAt: now,
-				})
-				.where(and(eq(marketItems.id, id), isNull(marketItems.deletedAt)));
-			await db
-				.update(marketItemImages)
-				.set({
-					deletedAt: now,
-					updatedAt: now,
-				})
-				.where(
-					and(
-						eq(marketItemImages.itemId, id),
-						isNull(marketItemImages.deletedAt),
-					),
-				);
-			await db
-				.update(marketComments)
-				.set({
-					deletedAt: now,
-					updatedAt: now,
-				})
-				.where(
-					and(eq(marketComments.itemId, id), isNull(marketComments.deletedAt)),
-				);
-
-			return true;
-		},
-
-		async listMarketCommentsByItemId(itemId) {
-			const rows = await db
-				.select({
-					id: marketComments.id,
-					itemId: marketComments.itemId,
-					content: marketComments.content,
-					createdAt: marketComments.createdAt,
-					updatedAt: marketComments.updatedAt,
-					authorId: user.id,
-					authorName: user.name,
-					authorFamilyName: user.familyName,
-					authorGivenName: user.givenName,
-					authorImage: user.image,
-					authorRole: user.role,
-				})
-				.from(marketComments)
-				.innerJoin(user, eq(marketComments.authorId, user.id))
-				.where(
-					and(
-						eq(marketComments.itemId, itemId),
-						isNull(marketComments.deletedAt),
-						isNull(user.deletedAt),
-					),
-				)
-				.orderBy(asc(marketComments.createdAt));
-
-			const updatedByMap = await listLatestAuditActorsByResourceId(
-				db,
-				"market_comment",
-				rows.map((row) => row.id),
-			);
-
-			return rows.map((row) =>
-				toMarketCommentEntity(row, updatedByMap[row.id] ?? null),
-			);
-		},
-
-		async createMarketComment(input) {
-			const [itemExists, authorExists] = await Promise.all([
-				db.query.marketItems.findFirst({
-					where: and(
-						eq(marketItems.id, input.itemId),
-						isNull(marketItems.deletedAt),
-					),
-					columns: { id: true },
-				}),
-				db.query.user.findFirst({
-					where: and(eq(user.id, input.authorId), isNull(user.deletedAt)),
-					columns: { id: true },
-				}),
-			]);
-
-			if (!itemExists || !authorExists) {
-				return null;
-			}
-
-			const id = crypto.randomUUID();
-			await db.insert(marketComments).values({
-				id,
-				itemId: input.itemId,
-				authorId: input.authorId,
-				content: input.content,
-			});
-
-			await db
-				.update(marketItems)
-				.set({ updatedAt: new Date() })
-				.where(
-					and(eq(marketItems.id, input.itemId), isNull(marketItems.deletedAt)),
-				);
-
-			return this.getMarketCommentById(id);
-		},
-
-		async getMarketCommentById(id) {
-			const rows = await db
-				.select({
-					id: marketComments.id,
-					itemId: marketComments.itemId,
-					content: marketComments.content,
-					createdAt: marketComments.createdAt,
-					updatedAt: marketComments.updatedAt,
-					authorId: user.id,
-					authorName: user.name,
-					authorFamilyName: user.familyName,
-					authorGivenName: user.givenName,
-					authorImage: user.image,
-					authorRole: user.role,
-				})
-				.from(marketComments)
-				.innerJoin(user, eq(marketComments.authorId, user.id))
-				.where(
-					and(
-						eq(marketComments.id, id),
-						isNull(marketComments.deletedAt),
-						isNull(user.deletedAt),
-					),
-				)
-				.limit(1);
-
-			if (!rows[0]) {
-				return null;
-			}
-
-			const updatedBy = await this.getLatestAuditActor("market_comment", id);
-			return toMarketCommentEntity(rows[0], updatedBy);
-		},
-
-		async updateMarketComment(id, input) {
-			const exists = await db.query.marketComments.findFirst({
-				where: and(eq(marketComments.id, id), isNull(marketComments.deletedAt)),
-				columns: { id: true, itemId: true },
-			});
-			if (!exists) {
-				return null;
-			}
-
-			await db
-				.update(marketComments)
-				.set({
-					...(input.content !== undefined ? { content: input.content } : {}),
-					updatedAt: new Date(),
-				})
-				.where(
-					and(eq(marketComments.id, id), isNull(marketComments.deletedAt)),
-				);
-
-			await db
-				.update(marketItems)
-				.set({ updatedAt: new Date() })
-				.where(
-					and(eq(marketItems.id, exists.itemId), isNull(marketItems.deletedAt)),
-				);
-
-			return this.getMarketCommentById(id);
-		},
-
-		async deleteMarketComment(id) {
-			const exists = await db.query.marketComments.findFirst({
-				where: and(eq(marketComments.id, id), isNull(marketComments.deletedAt)),
-				columns: { id: true, itemId: true },
-			});
-			if (!exists) {
-				return false;
-			}
-
-			const now = new Date();
-			await db
-				.update(marketComments)
-				.set({
-					deletedAt: now,
-					updatedAt: now,
-				})
-				.where(
-					and(eq(marketComments.id, id), isNull(marketComments.deletedAt)),
-				);
-
-			await db
-				.update(marketItems)
-				.set({ updatedAt: now })
-				.where(
-					and(eq(marketItems.id, exists.itemId), isNull(marketItems.deletedAt)),
-				);
-
-			return true;
-		},
-
-		async upsertMarketPushSubscription(input) {
-			const userExists = await db.query.user.findFirst({
-				where: and(eq(user.id, input.userId), isNull(user.deletedAt)),
-				columns: { id: true },
-			});
-			if (!userExists) {
-				return null;
-			}
-
-			const existing = await db.query.marketPushSubscriptions.findFirst({
-				where: eq(marketPushSubscriptions.endpoint, input.endpoint),
-			});
-
-			if (existing) {
-				await db
-					.update(marketPushSubscriptions)
-					.set({
-						userId: input.userId,
-						p256dh: input.p256dh,
-						auth: input.auth,
-						updatedAt: new Date(),
-					})
-					.where(eq(marketPushSubscriptions.id, existing.id));
-
-				return (
-					(await db.query.marketPushSubscriptions.findFirst({
-						where: eq(marketPushSubscriptions.id, existing.id),
-					})) ?? null
-				);
-			}
-
-			const id = crypto.randomUUID();
-			await db.insert(marketPushSubscriptions).values({
-				id,
-				userId: input.userId,
-				endpoint: input.endpoint,
-				p256dh: input.p256dh,
-				auth: input.auth,
-			});
-
-			return (
-				(await db.query.marketPushSubscriptions.findFirst({
-					where: eq(marketPushSubscriptions.id, id),
-				})) ?? null
-			);
-		},
-
-		async deleteMarketPushSubscription(input) {
-			const existing = await db.query.marketPushSubscriptions.findFirst({
-				where: and(
-					eq(marketPushSubscriptions.userId, input.userId),
-					eq(marketPushSubscriptions.endpoint, input.endpoint),
-				),
-				columns: { id: true },
-			});
+		async deleteAttachment(id) {
+			const existing = await findAttachmentById(id);
 			if (!existing) {
 				return false;
 			}
 
 			await db
-				.delete(marketPushSubscriptions)
-				.where(eq(marketPushSubscriptions.id, existing.id));
-			return true;
-		},
+				.update(attachments)
+				.set({ deletedAt: new Date() })
+				.where(and(eq(attachments.id, id), isNull(attachments.deletedAt)));
 
-		async listMarketPushSubscriptionsByUserId(userId) {
-			return db
-				.select()
-				.from(marketPushSubscriptions)
-				.where(eq(marketPushSubscriptions.userId, userId))
-				.orderBy(desc(marketPushSubscriptions.updatedAt));
+			return true;
 		},
 
 		async getSiteSettings() {
@@ -3401,13 +2362,13 @@ export const createDbDataService = (database: D1Database): DataService => {
 				return [];
 			}
 
-			const rows = await db
-				.select()
-				.from(user)
-				.where(
-					and(inArray(user.id, normalizedUserIds), isNull(user.deletedAt)),
-				)
-				.orderBy(desc(user.createdAt));
+			const rows = await selectInChunks(normalizedUserIds, (chunk) =>
+				db
+					.select()
+					.from(user)
+					.where(and(inArray(user.id, chunk), isNull(user.deletedAt)))
+					.orderBy(desc(user.createdAt)),
+			);
 			return mapUsersWithGenerations(db, rows);
 		},
 		async listUsersByGenerationIds(generationIds) {
@@ -3567,8 +2528,6 @@ export const createDbDataService = (database: D1Database): DataService => {
 			> = {
 				activity: [],
 				exhibition: [],
-				generation_notice: [],
-				global_notice: [],
 				linktree: [],
 				linktree_item: [],
 			};
@@ -3589,8 +2548,6 @@ export const createDbDataService = (database: D1Database): DataService => {
 			const [
 				activityRows,
 				exhibitionRows,
-				generationNoticeRows,
-				globalNoticeRows,
 				linktreeRows,
 				linktreeItemRows,
 			] = await Promise.all([
@@ -3615,32 +2572,6 @@ export const createDbDataService = (database: D1Database): DataService => {
 							})
 							.from(exhibitions)
 							.where(inArray(exhibitions.id, resourceIdsByType.exhibition))
-					: Promise.resolve([]),
-				resourceIdsByType.generation_notice.length > 0
-					? db
-							.select({
-								id: generationNotices.id,
-								resourceTitle: generationNotices.title,
-								generationId: generationNotices.generationId,
-								deletedAt: generationNotices.deletedAt,
-							})
-							.from(generationNotices)
-							.where(
-								inArray(
-									generationNotices.id,
-									resourceIdsByType.generation_notice,
-								),
-							)
-					: Promise.resolve([]),
-				resourceIdsByType.global_notice.length > 0
-					? db
-							.select({
-								id: globalNotices.id,
-								resourceTitle: globalNotices.title,
-								deletedAt: globalNotices.deletedAt,
-							})
-							.from(globalNotices)
-							.where(inArray(globalNotices.id, resourceIdsByType.global_notice))
 					: Promise.resolve([]),
 				resourceIdsByType.linktree.length > 0
 					? db
@@ -3685,26 +2616,6 @@ export const createDbDataService = (database: D1Database): DataService => {
 				});
 			}
 
-			const generationNoticeMetaById = new Map<string, UserResourceMeta>();
-			for (const row of generationNoticeRows) {
-				generationNoticeMetaById.set(row.id, {
-					resourceTitle: row.resourceTitle,
-					generationId: row.generationId,
-					linktreeId: null,
-					deletedAt: row.deletedAt,
-				});
-			}
-
-			const globalNoticeMetaById = new Map<string, UserResourceMeta>();
-			for (const row of globalNoticeRows) {
-				globalNoticeMetaById.set(row.id, {
-					resourceTitle: row.resourceTitle,
-					generationId: null,
-					linktreeId: null,
-					deletedAt: row.deletedAt,
-				});
-			}
-
 			const linktreeMetaById = new Map<string, UserResourceMeta>();
 			for (const row of linktreeRows) {
 				linktreeMetaById.set(row.id, {
@@ -3731,8 +2642,6 @@ export const createDbDataService = (database: D1Database): DataService => {
 			> = {
 				activity: activityMetaById,
 				exhibition: exhibitionMetaById,
-				generation_notice: generationNoticeMetaById,
-				global_notice: globalNoticeMetaById,
 				linktree: linktreeMetaById,
 				linktree_item: linktreeItemMetaById,
 			};
@@ -3863,10 +2772,12 @@ export const createDbDataService = (database: D1Database): DataService => {
 					.where(and(eq(user.id, targetUserId), isNull(user.deletedAt)));
 			}
 
-			const rows = await db
-				.select()
-				.from(user)
-				.where(and(inArray(user.id, targetUserIds), isNull(user.deletedAt)));
+			const rows = await selectInChunks(targetUserIds, (chunk) =>
+				db
+					.select()
+					.from(user)
+					.where(and(inArray(user.id, chunk), isNull(user.deletedAt))),
+			);
 
 			return mapUsersWithGenerations(db, rows);
 		},

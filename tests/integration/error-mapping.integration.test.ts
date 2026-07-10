@@ -10,10 +10,10 @@ import {
 describe("global error handling integration", () => {
   it("maps validation failures to BAD_REQUEST", async () => {
     const app = createTestApp({
-      actor: createActor("regular_member"),
+      actor: createActor("vice_president"),
     });
 
-    const response = await app.request("/api/market/items", {
+    const response = await app.request("/api/attachments", {
       method: "POST",
       headers: {
         "content-type": "application/json",

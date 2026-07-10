@@ -5,11 +5,10 @@ export type Role = CoreRole;
 export type Resource =
   | "generation"
   | "activity"
-  | "notice"
-  | "market"
   | "exhibition"
   | "linktree"
-  | "user";
+  | "user"
+  | "site_setting";
 
 export type Action = "create" | "read" | "update" | "delete";
 

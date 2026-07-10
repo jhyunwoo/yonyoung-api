@@ -29,9 +29,6 @@ export type Bindings = CloudflareBindings & {
   PERF_ANALYTICS_ENABLED?: string;
   PERF_ANALYTICS_SAMPLE_RATE?: string;
   CSP_REPORT_ONLY?: string;
-  VAPID_PUBLIC_KEY?: string;
-  VAPID_PRIVATE_KEY?: string;
-  VAPID_SUBJECT?: string;
 };
 
 export type AppVariables = {
