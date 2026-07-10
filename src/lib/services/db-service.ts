@@ -164,11 +164,10 @@ const selectInChunks = async <TItem, TRow>(
 	items: readonly TItem[],
 	queryChunk: (chunk: TItem[]) => Promise<TRow[]>,
 ): Promise<TRow[]> => {
-	const rows: TRow[] = [];
-	for (const chunk of chunkArray(items)) {
-		rows.push(...(await queryChunk(chunk)));
-	}
-	return rows;
+	// 읽기 전용 청크 조회를 순차 실행하면 청크 수만큼 D1 왕복 지연이 누적되므로
+	// 병렬로 실행한다. Promise.all은 입력 순서를 보존하므로 결과 순서는 동일하다.
+	const chunkRows = await Promise.all(chunkArray(items).map(queryChunk));
+	return chunkRows.flat();
 };
 
 const listLatestAuditActorsByResourceId = async (
@@ -625,34 +624,39 @@ const mapUsersWithGenerations = async (
 	}
 
 	const userIds = rows.map((row) => row.id);
-	const linkRows = await (async () => {
-		try {
-			return await selectInChunks(userIds, (chunk) =>
-				db
-					.select({
-						userId: userGenerations.userId,
-						generationId: userGenerations.generationId,
-					})
-					.from(userGenerations)
-					.innerJoin(
-						generations,
-						eq(userGenerations.generationId, generations.id),
-					)
-					.where(
-						and(
-							inArray(userGenerations.userId, chunk),
-							isNull(generations.deletedAt),
-						),
-					)
-					.orderBy(asc(userGenerations.userId), desc(generations.sortOrder)),
-			);
-		} catch (error) {
-			if (isMissingUserGenerationsTableError(error)) {
-				return [] as Array<{ userId: string; generationId: string }>;
+	// 세대 링크 조회와 최근 수정자(audit) 조회는 서로 독립이므로 병렬 실행해
+	// 순차 D1 왕복(2~3회)을 최대 병렬 깊이 2로 줄인다.
+	const [linkRows, updatedByMap] = await Promise.all([
+		(async () => {
+			try {
+				return await selectInChunks(userIds, (chunk) =>
+					db
+						.select({
+							userId: userGenerations.userId,
+							generationId: userGenerations.generationId,
+						})
+						.from(userGenerations)
+						.innerJoin(
+							generations,
+							eq(userGenerations.generationId, generations.id),
+						)
+						.where(
+							and(
+								inArray(userGenerations.userId, chunk),
+								isNull(generations.deletedAt),
+							),
+						)
+						.orderBy(asc(userGenerations.userId), desc(generations.sortOrder)),
+				);
+			} catch (error) {
+				if (isMissingUserGenerationsTableError(error)) {
+					return [] as Array<{ userId: string; generationId: string }>;
+				}
+				throw error;
 			}
-			throw error;
-		}
-	})();
+		})(),
+		listLatestAuditActorsByResourceId(db, "user", userIds),
+	]);
 
 	const generationIdsByUserId = new Map<string, string[]>();
 	for (const row of linkRows) {
@@ -660,12 +664,6 @@ const mapUsersWithGenerations = async (
 		current.push(row.generationId);
 		generationIdsByUserId.set(row.userId, current);
 	}
-
-	const updatedByMap = await listLatestAuditActorsByResourceId(
-		db,
-		"user",
-		userIds,
-	);
 
 	return rows.map((row) => {
 		const generationIds = dedupeGenerationIds(
@@ -2788,11 +2786,29 @@ export const createDbDataService = (database: D1Database): DataService => {
 		 * @remarks 대시보드 KPI 집계를 위해 단순 count 쿼리를 결합해 사용합니다.
 		 */
 		async getAdminDashboardStats(generationSortOrder) {
+			const hasGenerationFilter =
+				typeof generationSortOrder === "number" &&
+				Number.isFinite(generationSortOrder);
+
+			// 세대 ID를 별도 왕복으로 조회하지 않고 서브쿼리로 인라인해
+			// 전체 집계를 단일 병렬 단계(D1 왕복 깊이 1)로 수행한다.
+			const selectedGenerationIdSubquery = () =>
+				db
+					.select({ id: generations.id })
+					.from(generations)
+					.where(
+						and(
+							eq(generations.sortOrder, generationSortOrder as number),
+							isNull(generations.deletedAt),
+						),
+					);
+
 			const [
 				usersCountRows,
 				unverifiedUsersCountRows,
 				generationsCountRows,
 				linktreeLinksCountRows,
+				generationScopedTotals,
 			] = await Promise.all([
 				db
 					.select({ value: sql<number>`count(*)` })
@@ -2813,87 +2829,88 @@ export const createDbDataService = (database: D1Database): DataService => {
 					.where(
 						and(isNull(linktreeItems.deletedAt), isNull(linktree.deletedAt)),
 					),
+				hasGenerationFilter
+					? (async () => {
+							const [activitiesCountRows, exhibitionsCountRows, membersTotal] =
+								await Promise.all([
+									db
+										.select({ value: sql<number>`count(*)` })
+										.from(activities)
+										.where(
+											and(
+												inArray(
+													activities.generationId,
+													selectedGenerationIdSubquery(),
+												),
+												isNull(activities.deletedAt),
+											),
+										),
+									db
+										.select({ value: sql<number>`count(*)` })
+										.from(exhibitions)
+										.where(
+											and(
+												inArray(
+													exhibitions.generationId,
+													selectedGenerationIdSubquery(),
+												),
+												isNull(exhibitions.deletedAt),
+											),
+										),
+									(async () => {
+										try {
+											const memberRows = await db
+												.select({
+													userId: userGenerations.userId,
+												})
+												.from(userGenerations)
+												.innerJoin(user, eq(userGenerations.userId, user.id))
+												.where(
+													and(
+														inArray(
+															userGenerations.generationId,
+															selectedGenerationIdSubquery(),
+														),
+														isNull(user.deletedAt),
+													),
+												);
+											return new Set(memberRows.map((row) => row.userId)).size;
+										} catch (error) {
+											if (!isMissingUserGenerationsTableError(error)) {
+												throw error;
+											}
+											const fallbackRows = await db
+												.select({ value: sql<number>`count(*)` })
+												.from(user)
+												.where(
+													and(
+														inArray(
+															user.generationId,
+															selectedGenerationIdSubquery(),
+														),
+														isNull(user.deletedAt),
+													),
+												);
+											return fallbackRows[0]?.value ?? 0;
+										}
+									})(),
+								]);
+
+							return {
+								membersTotal,
+								activitiesTotal: activitiesCountRows[0]?.value ?? 0,
+								exhibitionsTotal: exhibitionsCountRows[0]?.value ?? 0,
+							};
+						})()
+					: Promise.resolve(null),
 			]);
 
-			let selectedGenerationId: string | null = null;
-			if (
-				typeof generationSortOrder === "number" &&
-				Number.isFinite(generationSortOrder)
-			) {
-				const generationRow = await db.query.generations.findFirst({
-					where: and(
-						eq(generations.sortOrder, generationSortOrder),
-						isNull(generations.deletedAt),
-					),
-					columns: {
-						id: true,
-					},
-				});
-				selectedGenerationId = generationRow?.id ?? null;
-			}
-
-			let selectedGenerationMembersTotal = 0;
-			let selectedGenerationActivitiesTotal = 0;
-			let selectedGenerationExhibitionsTotal = 0;
-
-			if (selectedGenerationId) {
-				const [activitiesCountRows, exhibitionsCountRows] = await Promise.all([
-					db
-						.select({ value: sql<number>`count(*)` })
-						.from(activities)
-						.where(
-							and(
-								eq(activities.generationId, selectedGenerationId),
-								isNull(activities.deletedAt),
-							),
-						),
-					db
-						.select({ value: sql<number>`count(*)` })
-						.from(exhibitions)
-						.where(
-							and(
-								eq(exhibitions.generationId, selectedGenerationId),
-								isNull(exhibitions.deletedAt),
-							),
-						),
-				]);
-
-				selectedGenerationActivitiesTotal = activitiesCountRows[0]?.value ?? 0;
-				selectedGenerationExhibitionsTotal =
-					exhibitionsCountRows[0]?.value ?? 0;
-
-				try {
-					const memberRows = await db
-						.select({
-							userId: userGenerations.userId,
-						})
-						.from(userGenerations)
-						.innerJoin(user, eq(userGenerations.userId, user.id))
-						.where(
-							and(
-								eq(userGenerations.generationId, selectedGenerationId),
-								isNull(user.deletedAt),
-							),
-						);
-					selectedGenerationMembersTotal = new Set(
-						memberRows.map((row) => row.userId),
-					).size;
-				} catch (error) {
-					if (!isMissingUserGenerationsTableError(error)) {
-						throw error;
-					}
-					const fallbackRows = await db
-						.select({ value: sql<number>`count(*)` })
-						.from(user)
-						.where(
-							and(
-								eq(user.generationId, selectedGenerationId),
-								isNull(user.deletedAt),
-							),
-						);
-					selectedGenerationMembersTotal = fallbackRows[0]?.value ?? 0;
-				}
-			}
+			const selectedGenerationMembersTotal =
+				generationScopedTotals?.membersTotal ?? 0;
+			const selectedGenerationActivitiesTotal =
+				generationScopedTotals?.activitiesTotal ?? 0;
+			const selectedGenerationExhibitionsTotal =
+				generationScopedTotals?.exhibitionsTotal ?? 0;
 
 			return {
 				usersTotal: usersCountRows[0]?.value ?? 0,

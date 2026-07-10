@@ -157,6 +157,16 @@ const createAuthWithEnv = (database: D1Database, env: AuthRuntimeEnv) => {
     emailAndPassword: {
       enabled: env.emailAndPasswordEnabled,
     },
+    session: {
+      // 세션 데이터를 서명된 쿠키에 단기 캐시해 요청마다 발생하던
+      // D1 세션 조회(원거리 리전에서 왕복 ~200ms)를 제거한다.
+      // 권한(role)은 어차피 getActorFromSession에서 매 요청 DB로 재확인하므로
+      // 인가 정확도에는 영향이 없다. 세션 폐기 전파 지연은 최대 5분.
+      cookieCache: {
+        enabled: true,
+        maxAge: 5 * 60,
+      },
+    },
     user: {
       additionalFields: {
         familyName: {

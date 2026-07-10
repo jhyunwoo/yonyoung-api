@@ -10,7 +10,7 @@ import {
   ApiAdminDashboardStatsSchema,
 } from "../lib/openapi/schemas";
 import {
-  readR2TotalUsageBytes,
+  readR2TotalUsageBytesCached,
   R2_STORAGE_LIMIT_BYTES,
 } from "../lib/storage/usage";
 import { resolveR2Bucket } from "../infra/r2/client";
@@ -60,27 +60,31 @@ export const registerDashboardRoutes = (
       return badRequest(c, query.error.issues[0]?.message ?? "잘못된 요청입니다.");
     }
 
-    const stats = await dependencies
-      .getDataService(c)
-      .getAdminDashboardStats(query.data.generationSortOrder ?? null);
-
+    // 캐시 저장은 응답 이후 백그라운드로 수행한다(가능한 경우).
+    let waitUntil: ((promise: Promise<unknown>) => void) | undefined;
     try {
-      const r2StorageUsedBytes = await readR2TotalUsageBytes(
-        resolveR2Bucket(c.env),
-      );
-      return ok(c, {
-        ...stats,
-        r2StorageUsedBytes,
-        r2StorageLimitBytes: R2_STORAGE_LIMIT_BYTES,
-        r2StorageUsageAvailable: true,
-      });
+      const executionCtx = c.executionCtx;
+      waitUntil = executionCtx?.waitUntil?.bind(executionCtx);
     } catch {
-      return ok(c, {
-        ...stats,
-        r2StorageUsedBytes: 0,
-        r2StorageLimitBytes: R2_STORAGE_LIMIT_BYTES,
-        r2StorageUsageAvailable: false,
-      });
+      waitUntil = undefined;
     }
+
+    // DB 집계와 R2 사용량 조회는 독립이므로 병렬 실행한다.
+    // R2 조회 실패는 기존과 동일하게 조회불가 상태로 강등한다.
+    const [stats, r2UsageResult] = await Promise.all([
+      dependencies
+        .getDataService(c)
+        .getAdminDashboardStats(query.data.generationSortOrder ?? null),
+      readR2TotalUsageBytesCached(resolveR2Bucket(c.env), { waitUntil })
+        .then((value) => ({ available: true as const, value }))
+        .catch(() => ({ available: false as const, value: 0 })),
+    ]);
+
+    return ok(c, {
+      ...stats,
+      r2StorageUsedBytes: r2UsageResult.value,
+      r2StorageLimitBytes: R2_STORAGE_LIMIT_BYTES,
+      r2StorageUsageAvailable: r2UsageResult.available,
+    });
   });
 };

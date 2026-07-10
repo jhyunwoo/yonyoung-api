@@ -34,45 +34,57 @@ export const getActorFromSession = async (
   }
 
   const db = getDbClient(database);
-  const dbUser = await db.query.user.findFirst({
-    where: eq(user.id, sessionResult.user.id),
-    columns: {
-      id: true,
-      name: true,
-      familyName: true,
-      givenName: true,
-      email: true,
-      role: true,
-      generationId: true,
-    },
-  });
+  const sessionUserId = sessionResult.user.id;
+
+  const buildUserQuery = () =>
+    db.query.user.findFirst({
+      where: eq(user.id, sessionUserId),
+      columns: {
+        id: true,
+        name: true,
+        familyName: true,
+        givenName: true,
+        email: true,
+        role: true,
+        generationId: true,
+      },
+    });
+
+  const buildGenerationsQuery = () =>
+    db
+      .select({
+        generationId: userGenerations.generationId,
+      })
+      .from(userGenerations)
+      .innerJoin(generations, eq(userGenerations.generationId, generations.id))
+      .where(
+        and(
+          eq(userGenerations.userId, sessionUserId),
+          isNull(generations.deletedAt),
+        ),
+      )
+      .orderBy(desc(generations.sortOrder));
+
+  // 사용자 조회와 세대 링크 조회를 D1 batch(단일 HTTP 왕복)로 묶어
+  // 요청당 순차 왕복 2회를 1회로 줄인다.
+  let dbUser: Awaited<ReturnType<typeof buildUserQuery>>;
+  let generationRows: Array<{ generationId: string }>;
+  try {
+    [dbUser, generationRows] = await db.batch([
+      buildUserQuery(),
+      buildGenerationsQuery(),
+    ]);
+  } catch (error) {
+    if (!isMissingUserGenerationsTableError(error)) {
+      throw error;
+    }
+    dbUser = await buildUserQuery();
+    generationRows = [];
+  }
 
   if (!dbUser) {
     return null;
   }
-
-  const generationRows = await (async () => {
-    try {
-      return await db
-        .select({
-          generationId: userGenerations.generationId,
-        })
-        .from(userGenerations)
-        .innerJoin(generations, eq(userGenerations.generationId, generations.id))
-        .where(
-          and(
-            eq(userGenerations.userId, dbUser.id),
-            isNull(generations.deletedAt),
-          ),
-        )
-        .orderBy(desc(generations.sortOrder));
-    } catch (error) {
-      if (isMissingUserGenerationsTableError(error)) {
-        return [] as Array<{ generationId: string }>;
-      }
-      throw error;
-    }
-  })();
 
   const generationIds = generationRows.map((row) => row.generationId);
   const legacyGenerationId =
