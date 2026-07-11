@@ -16,17 +16,27 @@ const isMissingUserGenerationsTableError = (error: unknown): boolean => {
   return error.message.includes("no such table: user_generations");
 };
 
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
 /**
  * Better Auth 세션 기반으로 현재 사용자 정보를 로드한다.
  * 권한 판정 정확도를 위해 role/generation 정보는 DB에서 다시 읽는다.
+ *
+ * cookieCache(서명 쿠키, maxAge 5분)로 읽기 요청의 세션 D1 조회를 생략하되,
+ * 세션 무효화 지연(revocation lag)이 쓰기에 영향을 주지 않도록
+ * 변경(non-GET) 요청은 캐시를 우회해 항상 D1에서 세션을 재검증한다.
+ * role/generation은 캐시 히트 여부와 무관하게 매 요청 D1에서 새로 읽으므로
+ * 권한 강등·계정 삭제는 즉시 반영된다.
  */
 export const getActorFromSession = async (
   c: Context<HonoAppType>,
 ): Promise<Actor | null> => {
   const database = resolveD1Database(c.env);
   const auth = createAuth(database, c.env);
+  const isMutation = !SAFE_METHODS.has(c.req.method.toUpperCase());
   const sessionResult = await auth.api.getSession({
     headers: c.req.raw.headers,
+    ...(isMutation ? { query: { disableCookieCache: true } } : {}),
   });
 
   if (!sessionResult?.user?.id) {
