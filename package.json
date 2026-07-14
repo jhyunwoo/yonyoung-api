@@ -21,26 +21,26 @@
 		"test:coverage": "vitest run --coverage"
 	},
 	"dependencies": {
-		"@aws-sdk/client-s3": "^3.1048.0",
-		"@aws-sdk/s3-request-presigner": "^3.1048.0",
+		"@aws-sdk/client-s3": "^3.1085.0",
+		"@aws-sdk/s3-request-presigner": "^3.1085.0",
 		"@hono/zod-openapi": "^1.4.0",
 		"@scalar/hono-api-reference": "^0.9.48",
-		"better-auth": "^1.6.11",
+		"better-auth": "^1.6.23",
 		"dotenv": "^17.4.2",
 		"drizzle-orm": "^0.45.2",
-		"hono": "^4.12.19",
+		"hono": "^4.12.29",
 		"xss": "^1.0.15",
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.10.15",
 		"@eslint/js": "^10.0.1",
-		"@types/node": "^25.8.0",
-		"@vitest/coverage-v8": "^3.2.4",
+		"@types/node": "^25.9.5",
+		"@vitest/coverage-v8": "^3.2.7",
 		"drizzle-kit": "^0.31.10",
-		"eslint": "^9.39.4",
-		"typescript-eslint": "^8.59.3",
-		"vitest": "^3.2.4",
-		"wrangler": "^4.92.0"
+		"eslint": "^9.39.5",
+		"typescript-eslint": "^8.63.0",
+		"vitest": "^3.2.7",
+		"wrangler": "^4.110.0"
 	}
 }
