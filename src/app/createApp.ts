@@ -7,7 +7,10 @@ import {
 import packageJson from "../../package.json";
 import type HonoAppType from "../types/honoAppType";
 import { AppError } from "../shared/errors/AppError";
-import { notFound } from "../lib/http/response";
+import { forbidden, notFound } from "../lib/http/response";
+import { requireActor } from "../lib/http/authz";
+import { isManagerLikeRole } from "../lib/authorization/policy";
+import { errorResponses } from "../lib/openapi/responses";
 import {
   AppDependencies,
   createDefaultDependencies,
@@ -67,6 +70,24 @@ const healthRoute = createRoute({
   operationId: "getHealth",
   responses: {
     200: {
+      description: "Worker 프로세스가 요청을 처리할 수 있는 상태",
+      content: {
+        "application/json": {
+          schema: healthResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+const readinessRoute = createRoute({
+  method: "get",
+  path: "/api/health/readiness",
+  tags: ["System"],
+  operationId: "getReadiness",
+  security: [{ cookieAuth: [] }],
+  responses: {
+    200: {
       description: "모든 인프라 의존성이 정상 동작하는 상태",
       content: {
         "application/json": {
@@ -74,6 +95,8 @@ const healthRoute = createRoute({
         },
       },
     },
+    401: errorResponses[401],
+    403: errorResponses[403],
     503: {
       description: "하나 이상의 인프라 의존성 점검에 실패한 상태",
       content: {
@@ -171,8 +194,33 @@ export const createApp = (partialDependencies?: Partial<AppDependencies>) => {
   mountDomainRouters(app, dependencies, defaultValidationHook);
 
   app.openapi(healthRoute, async (c) => {
-    const healthReport = await runInfrastructureHealthChecks(c.env);
     c.header("Cache-Control", "no-store, no-cache, must-revalidate");
+    return c.json({
+      status: "healthy" as const,
+      checkedAt: new Date().toISOString(),
+      durationMs: 0,
+      summary: {
+        total: 0,
+        healthy: 0,
+        unhealthy: 0,
+        skipped: 0,
+      },
+      checks: [],
+    });
+  });
+
+  app.openapi(readinessRoute, async (c): Promise<any> => {
+    c.header("Cache-Control", "no-store, no-cache, must-revalidate");
+    const actorResult = await requireActor(c, dependencies);
+    if ("response" in actorResult) {
+      return actorResult.response;
+    }
+
+    if (!isManagerLikeRole(actorResult.actor.role)) {
+      return forbidden(c);
+    }
+
+    const healthReport = await runInfrastructureHealthChecks(c.env);
     return c.json(healthReport, healthReport.status === "healthy" ? 200 : 503);
   });
 

@@ -10,7 +10,11 @@ import {
 } from "./test-helpers";
 
 describe("audit routes", () => {
-  it("manager는 activity 감사 로그를 조회할 수 있다", async () => {
+  it.each([
+    ["manager", IDs.manager],
+    ["vice_president", IDs.vicePresident],
+    ["president", IDs.president],
+  ] as const)("%s 역할은 activity 감사 로그를 조회할 수 있다", async (role, id) => {
     const listAuditLogs = fn(async () => [
       {
         id: "a0000000-0000-4000-8000-000000000001",
@@ -30,7 +34,7 @@ describe("audit routes", () => {
     ]);
 
     const app = createTestApp({
-      actor: createActor("manager", IDs.manager),
+      actor: createActor(role, id),
       dataService: createDataServiceMock({ listAuditLogs }),
     });
 
@@ -65,7 +69,7 @@ describe("audit routes", () => {
     expect(listAuditLogs).toHaveBeenCalledWith("attachment", IDs.attachment, 20);
   });
 
-  it("resourceType별 권한 리소스를 매핑해 감사 로그를 조회한다", async () => {
+  it("manager는 모든 지원 resourceType의 감사 로그를 조회할 수 있다", async () => {
     const listAuditLogs = fn(async () => []);
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
@@ -156,6 +160,20 @@ describe("audit routes", () => {
     const listAuditLogs = fn(async () => []);
     const app = createTestApp({
       actor: createActor("unverified", IDs.member),
+      dataService: createDataServiceMock({ listAuditLogs }),
+    });
+
+    const response = await app.request(`/api/audit/activity/${IDs.activity}`);
+
+    expect(response.status).toBe(403);
+    await expectErrorCode(response, "FORBIDDEN");
+    expect(listAuditLogs).not.toHaveBeenCalled();
+  });
+
+  it("일반 회원은 감사 로그 조회 권한이 없다", async () => {
+    const listAuditLogs = fn(async () => []);
+    const app = createTestApp({
+      actor: createActor("regular_member", IDs.member),
       dataService: createDataServiceMock({ listAuditLogs }),
     });
 

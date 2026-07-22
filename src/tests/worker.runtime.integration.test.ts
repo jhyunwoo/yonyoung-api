@@ -39,17 +39,13 @@ describe("worker runtime integration", () => {
     async () => {
       const response = await worker!.fetch("/health");
 
-      expect([200, 503]).toContain(response.status);
+      expect(response.status).toBe(200);
       const body = (await response.json()) as {
         status: string;
         checks: Array<{ service: string; status: string }>;
       };
-      if (response.status === 200) {
-        expect(body.status).toBe("healthy");
-      } else {
-        expect(body.status).toBe("unhealthy");
-      }
-      expect(body.checks.length).toBeGreaterThan(0);
+      expect(body.status).toBe("healthy");
+      expect(body.checks).toEqual([]);
       expect(response.headers.get("x-request-id")).toBeTruthy();
       expect(response.headers.get("server-timing")).toContain("total;dur=");
     },

@@ -37,6 +37,7 @@ import {
   ApiMemberProfileUpdateSchema,
 } from "../lib/openapi/schemas";
 import type { Role } from "../lib/authorization/types";
+import { isHttpUrl } from "../lib/validation/url";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -46,6 +47,26 @@ const updateUserRequestSchema = z
 
 const canReadAllUsers = (role: string): boolean =>
   role === "president" || role === "vice_president";
+
+type UserUrlFields = {
+  image: string | null;
+  showcaseImageUrls: string[];
+  personalLink: string | null;
+};
+
+const sanitizeUserUrlFields = <T extends UserUrlFields>(user: T): T => {
+  const image = user.image?.trim() ?? null;
+  const personalLink = user.personalLink?.trim() ?? null;
+  return {
+    ...user,
+    image: image && isHttpUrl(image) ? image : null,
+    showcaseImageUrls: user.showcaseImageUrls
+      .map((url) => url.trim())
+      .filter(isHttpUrl),
+    personalLink:
+      personalLink && isHttpUrl(personalLink) ? personalLink : null,
+  };
+};
 
 const canManageTargetUser = (
   actor: {
@@ -202,7 +223,7 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
 
     if (canReadAllUsers(actorResult.actor.role)) {
       const data = await dependencies.getDataService(c).listUsers();
-      return ok(c, data);
+      return ok(c, data.map(sanitizeUserUrlFields));
     }
 
     if (actorResult.actor.role === "manager") {
@@ -218,7 +239,7 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
       const data = await dependencies
         .getDataService(c)
         .listUsersByGenerationIds(Array.from(actorGenerationIdSet));
-      return ok(c, data);
+      return ok(c, data.map(sanitizeUserUrlFields));
     }
 
     if (isMemberLikeRole(actorResult.actor.role)) {
@@ -226,7 +247,7 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
       if (!me) {
         return notFound(c);
       }
-      return ok(c, [me]);
+      return ok(c, [sanitizeUserUrlFields(me)]);
     }
 
     return forbidden(c);
@@ -245,7 +266,7 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
       return notFound(c);
     }
 
-    return ok(c, data);
+    return ok(c, sanitizeUserUrlFields(data));
   });
 
   app.openapi(getUserByIdRoute, /** app.openapi 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param c 요청/실행 컨텍스트 객체입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 권한/인증 분기에서 잘못된 흐름이 발생하지 않도록 호출 순서를 유지해야 합니다. */ async (c): Promise<any> => {
@@ -296,7 +317,7 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
       return forbidden(c);
     }
 
-    return ok(c, data);
+    return ok(c, sanitizeUserUrlFields(data));
   });
 
   app.openapi(getUserResourceHistoryRoute, async (c): Promise<any> => {
@@ -402,7 +423,14 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
         }),
       ),
     );
-    return ok(c, updatedUsers.map((updatedUser) => withUpdatedByActor(updatedUser, actorResult.actor)));
+    return ok(
+      c,
+      updatedUsers.map((updatedUser) =>
+        sanitizeUserUrlFields(
+          withUpdatedByActor(updatedUser, actorResult.actor),
+        ),
+      ),
+    );
   });
 
   app.openapi(updateUserRoute, /** app.openapi 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param c 요청/실행 컨텍스트 객체입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 권한/인증 분기에서 잘못된 흐름이 발생하지 않도록 호출 순서를 유지해야 합니다. */ async (c): Promise<any> => {
@@ -476,7 +504,10 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
         action: "update",
         changedFields: readChangedFields(updateInput, ["updatedAt"]),
       });
-      return ok(c, withUpdatedByActor(data, actorResult.actor));
+      return ok(
+        c,
+        sanitizeUserUrlFields(withUpdatedByActor(data, actorResult.actor)),
+      );
     }
 
     // member 계열 role 및 unverified는 본인 프로필 필드만 수정 가능하다.
@@ -504,7 +535,10 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
         action: "update",
         changedFields: readChangedFields(body.data, ["updatedAt"]),
       });
-      return ok(c, withUpdatedByActor(data, actorResult.actor));
+      return ok(
+        c,
+        sanitizeUserUrlFields(withUpdatedByActor(data, actorResult.actor)),
+      );
     }
 
     return forbidden(c);

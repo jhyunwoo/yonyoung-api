@@ -2,6 +2,7 @@ import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  NoSuchUpload,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -69,10 +70,13 @@ type StorageEnv = {
   publicUrlSigningSecret: string;
 };
 
-const PRESIGNED_URL_EXPIRES_IN_SECONDS = 3600;
+export const PRESIGNED_URL_EXPIRES_IN_SECONDS = 3600;
 const PUBLIC_MEDIA_ROUTE_PREFIX = "/api/public/media";
 const PUBLIC_URL_SIGNING_SECRET_ENV_KEY = "R2_PUBLIC_URL_SIGNING_SECRET";
+const PREVIOUS_PUBLIC_URL_SIGNING_SECRET_ENV_KEY =
+  "R2_PUBLIC_URL_SIGNING_SECRET_PREVIOUS";
 const LEGACY_PUBLIC_URL_SIGNING_SECRET_ENV_KEY = "BETTER_AUTH_SECRET";
+const PUBLIC_URL_SIGNING_SECRET_MIN_LENGTH = 32;
 const SAFE_OBJECT_SEGMENT_PATTERN = /^[A-Za-z0-9._-]{1,160}$/;
 const SAFE_ACTOR_ID_PATTERN = /^[A-Za-z0-9_-]{1,120}$/;
 const SLOT_ALLOWLIST_BY_PATH: Record<ManagedUploadResourcePath, readonly ManagedUploadSlot[]> = {
@@ -138,7 +142,13 @@ const readRuntimeValue = (env: AppBindings, key: keyof AppBindings): string | un
 export const resolvePublicObjectSigningSecret = (
   env: AppBindings,
 ): string | undefined => {
-  return resolvePublicObjectSigningSecrets(env)[0];
+  const secret = readRuntimeValue(
+    env,
+    PUBLIC_URL_SIGNING_SECRET_ENV_KEY as keyof AppBindings,
+  );
+  return secret && secret.length >= PUBLIC_URL_SIGNING_SECRET_MIN_LENGTH
+    ? secret
+    : undefined;
 };
 
 export const resolvePublicObjectSigningSecrets = (
@@ -148,11 +158,38 @@ export const resolvePublicObjectSigningSecrets = (
     readRuntimeValue(env, PUBLIC_URL_SIGNING_SECRET_ENV_KEY as keyof AppBindings),
     readRuntimeValue(
       env,
+      PREVIOUS_PUBLIC_URL_SIGNING_SECRET_ENV_KEY as keyof AppBindings,
+    ),
+    readRuntimeValue(
+      env,
       LEGACY_PUBLIC_URL_SIGNING_SECRET_ENV_KEY as keyof AppBindings,
     ),
-  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+  ].filter(
+    (value): value is string =>
+      typeof value === "string" &&
+      value.length >= PUBLIC_URL_SIGNING_SECRET_MIN_LENGTH,
+  );
 
   return [...new Set(candidates)];
+};
+
+export const resolvePublicObjectBaseOrigin = (
+  env: AppBindings,
+): string | undefined => {
+  const configuredUrl = readRuntimeValue(env, "BETTER_AUTH_URL");
+  if (!configuredUrl) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(configuredUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return undefined;
+    }
+    return parsed.origin;
+  } catch {
+    return undefined;
+  }
 };
 
 const sanitizeFileName = (fileName: string): string => {
@@ -232,7 +269,7 @@ const resolveStorageEnv = (env: AppBindings): StorageEnv => {
   const accessKeyId = getEnvValue(env, "accessKeyId");
   const secretAccessKey = getEnvValue(env, "secretAccessKey");
   const bucket = getEnvValue(env, "bucket");
-  const publicReadBaseUrl = readRuntimeValue(env, "BETTER_AUTH_URL");
+  const publicReadBaseUrl = resolvePublicObjectBaseOrigin(env);
   const publicUrlSigningSecret = resolvePublicObjectSigningSecret(env);
 
   const missingKeys: string[] = [];
@@ -252,9 +289,7 @@ const resolveStorageEnv = (env: AppBindings): StorageEnv => {
     missingKeys.push("BETTER_AUTH_URL");
   }
   if (!publicUrlSigningSecret) {
-    missingKeys.push(
-      `${PUBLIC_URL_SIGNING_SECRET_ENV_KEY} or ${LEGACY_PUBLIC_URL_SIGNING_SECRET_ENV_KEY}`,
-    );
+    missingKeys.push(PUBLIC_URL_SIGNING_SECRET_ENV_KEY);
   }
 
   if (missingKeys.length > 0) {
@@ -271,7 +306,7 @@ const resolveStorageEnv = (env: AppBindings): StorageEnv => {
     accessKeyId: resolvedAccessKeyId,
     secretAccessKey: resolvedSecretAccessKey,
     bucket: resolvedBucket,
-    publicReadBaseUrl: new URL(publicReadBaseUrl as string).origin,
+    publicReadBaseUrl: publicReadBaseUrl as string,
     publicUrlSigningSecret: publicUrlSigningSecret as string,
   };
 };
@@ -309,6 +344,33 @@ const timingSafeEqualString = (left: string, right: string): boolean => {
   }
 
   return timingSafeEqual(leftBuffer, rightBuffer);
+};
+
+/**
+ * AWS SDK v3 exposes NoSuchUpload as a modeled client exception. R2's
+ * S3-compatible endpoint may preserve only the service error name, so accept
+ * that exact modeled name as a fallback without swallowing other 4xx/5xx or
+ * transport failures.
+ */
+export const isNoSuchMultipartUploadError = (error: unknown): boolean => {
+  if (error instanceof NoSuchUpload) {
+    return true;
+  }
+
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const serviceError = error as {
+    name?: unknown;
+    $fault?: unknown;
+    $metadata?: { httpStatusCode?: unknown };
+  };
+  return (
+    serviceError.name === "NoSuchUpload" &&
+    serviceError.$fault === "client" &&
+    serviceError.$metadata?.httpStatusCode === 404
+  );
 };
 
 export const buildSignedPublicObjectUrl = async (input: {
@@ -359,6 +421,7 @@ export const createR2PresignService = (env: AppBindings): PresignService => {
   const client = new S3Client({
     region: "auto",
     endpoint: storageEnv.endpoint,
+    requestChecksumCalculation: "WHEN_REQUIRED",
     credentials: {
       accessKeyId: storageEnv.accessKeyId,
       secretAccessKey: storageEnv.secretAccessKey,
@@ -432,6 +495,7 @@ export const createR2PresignService = (env: AppBindings): PresignService => {
         Key: input.objectKey,
         UploadId: input.uploadId,
         PartNumber: input.partNumber,
+        ContentLength: input.contentLength,
       });
 
       const uploadUrl = await getSignedUrl(client, command, {
@@ -440,7 +504,9 @@ export const createR2PresignService = (env: AppBindings): PresignService => {
 
       return {
         uploadUrl,
-        requiredHeaders: {},
+        requiredHeaders: {
+          "Content-Length": String(input.contentLength),
+        },
       };
     },
 

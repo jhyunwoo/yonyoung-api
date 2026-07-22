@@ -27,7 +27,7 @@ describe("page-views routes", () => {
       expect(response.status).toBe(200);
       const body = await readJson<{ ok: boolean }>(response);
       expect(body.ok).toBe(true);
-      expect(recordPageView).toHaveBeenCalledWith("home", undefined);
+      expect(recordPageView).toHaveBeenCalledWith("home", "home");
     });
 
     it("활동 방문을 기록할 수 있다", async () => {
@@ -103,6 +103,107 @@ describe("page-views routes", () => {
       expect(response.status).toBe(400);
       await expectErrorCode(response, "BAD_REQUEST");
     });
+
+    it("활동/전시는 유효한 UUID를 필수로 요구한다", async () => {
+      const recordPageView = fn(async () => undefined);
+      const app = createTestApp({
+        actor: null,
+        dataService: createDataServiceMock({ recordPageView }),
+      });
+
+      for (const payload of [
+        { pageType: "activity" },
+        { pageType: "exhibition", resourceId: "arbitrary-row-key" },
+      ]) {
+        const response = await app.request("/api/public/page-views", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        expect(response.status).toBe(400);
+      }
+      expect(recordPageView).not.toHaveBeenCalled();
+    });
+
+    it("존재하지 않거나 삭제된 리소스는 성공 응답만 반환하고 기록하지 않는다", async () => {
+      const recordPageView = fn(async () => undefined);
+      const recordView = fn(async () => undefined);
+      const isActiveViewResource = fn(async () => false);
+      const app = createTestApp({
+        actor: null,
+        dataService: createDataServiceMock({
+          isActiveViewResource,
+          recordPageView,
+        }),
+        viewCountStore: {
+          recordView,
+          getViewCounts: async () => ({}),
+        },
+      });
+
+      const response = await app.request("/api/public/page-views", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pageType: "activity",
+          resourceId: IDs.otherUuid,
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(isActiveViewResource).toHaveBeenCalledWith(
+        "activity",
+        IDs.otherUuid,
+      );
+      expect(recordPageView).not.toHaveBeenCalled();
+      expect(recordView).not.toHaveBeenCalled();
+    });
+
+    it("singleton 페이지의 임의 resourceId는 고정 ID로 정규화한다", async () => {
+      const recordPageView = fn(async () => undefined);
+      const app = createTestApp({
+        actor: null,
+        dataService: createDataServiceMock({ recordPageView }),
+      });
+
+      const response = await app.request("/api/public/page-views", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageType: "notice", resourceId: "random" }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(recordPageView).toHaveBeenCalledWith("notice", "notice");
+    });
+
+    it("rate limit을 초과하면 성공 응답을 유지하고 어떤 조회수도 기록하지 않는다", async () => {
+      const recordPageView = fn(async () => undefined);
+      const recordView = fn(async () => undefined);
+      const isActiveViewResource = fn(async () => true);
+      const app = createTestApp({
+        actor: null,
+        allowPageViewWrite: async () => false,
+        dataService: createDataServiceMock({
+          isActiveViewResource,
+          recordPageView,
+        }),
+        viewCountStore: {
+          recordView,
+          getViewCounts: async () => ({}),
+        },
+      });
+
+      const response = await app.request("/api/public/page-views", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageType: "home" }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(isActiveViewResource).not.toHaveBeenCalled();
+      expect(recordPageView).not.toHaveBeenCalled();
+      expect(recordView).not.toHaveBeenCalled();
+    });
   });
 
   describe("GET /api/admin/page-views/stats", () => {
@@ -169,5 +270,31 @@ describe("page-views routes", () => {
       expect(response.status).toBe(403);
       await expectErrorCode(response, "FORBIDDEN");
     });
+
+    it.each(["new_member", "associate_member", "regular_member"] as const)(
+      "일반 회원 역할 %s는 통계 집계 서비스를 호출할 수 없다",
+      async (role) => {
+        const getPageViewStats = fn(async () => ({
+          totalViews: 0,
+          homeViews: 0,
+          activityViews: 0,
+          exhibitionViews: 0,
+          noticeViews: 0,
+          topActivities: [],
+          topExhibitions: [],
+          dailyTrend: [],
+        }));
+        const app = createTestApp({
+          actor: createActor(role, IDs.member),
+          dataService: createDataServiceMock({ getPageViewStats }),
+        });
+
+        const response = await app.request("/api/admin/page-views/stats");
+
+        expect(response.status).toBe(403);
+        await expectErrorCode(response, "FORBIDDEN");
+        expect(getPageViewStats).not.toHaveBeenCalled();
+      },
+    );
   });
 });

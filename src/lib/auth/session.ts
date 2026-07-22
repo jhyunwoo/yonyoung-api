@@ -48,7 +48,7 @@ export const getActorFromSession = async (
 
   const buildUserQuery = () =>
     db.query.user.findFirst({
-      where: eq(user.id, sessionUserId),
+      where: and(eq(user.id, sessionUserId), isNull(user.deletedAt)),
       columns: {
         id: true,
         name: true,
@@ -75,20 +75,41 @@ export const getActorFromSession = async (
       )
       .orderBy(desc(generations.sortOrder));
 
+  const buildLegacyGenerationQuery = () =>
+    db
+      .select({
+        generationId: generations.id,
+      })
+      .from(user)
+      .innerJoin(generations, eq(user.generationId, generations.id))
+      .where(
+        and(
+          eq(user.id, sessionUserId),
+          isNull(user.deletedAt),
+          isNull(generations.deletedAt),
+        ),
+      )
+      .limit(1);
+
   // 사용자 조회와 세대 링크 조회를 D1 batch(단일 HTTP 왕복)로 묶어
   // 요청당 순차 왕복 2회를 1회로 줄인다.
   let dbUser: Awaited<ReturnType<typeof buildUserQuery>>;
   let generationRows: Array<{ generationId: string }>;
+  let legacyGenerationRows: Array<{ generationId: string }>;
   try {
-    [dbUser, generationRows] = await db.batch([
+    [dbUser, generationRows, legacyGenerationRows] = await db.batch([
       buildUserQuery(),
       buildGenerationsQuery(),
+      buildLegacyGenerationQuery(),
     ]);
   } catch (error) {
     if (!isMissingUserGenerationsTableError(error)) {
       throw error;
     }
-    dbUser = await buildUserQuery();
+    [dbUser, legacyGenerationRows] = await db.batch([
+      buildUserQuery(),
+      buildLegacyGenerationQuery(),
+    ]);
     generationRows = [];
   }
 
@@ -98,8 +119,7 @@ export const getActorFromSession = async (
 
   const generationIds = generationRows.map((row) => row.generationId);
   const legacyGenerationId =
-    generationIds[0] ??
-    (typeof dbUser.generationId === "string" ? dbUser.generationId : null);
+    generationIds[0] ?? legacyGenerationRows[0]?.generationId ?? null;
 
   return {
     id: dbUser.id,

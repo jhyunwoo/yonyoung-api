@@ -1,3 +1,5 @@
+import type { PageViewType } from "../views/page-view-target";
+
 export type GenerationEntity = {
   id: string;
   name: string;
@@ -472,7 +474,14 @@ export type DataService = {
     role: string;
   }) => Promise<UserEntity[]>;
   getAdminDashboardStats: (generationSortOrder: number | null) => Promise<AdminDashboardStatsEntity>;
-  recordPageView: (pageType: string, resourceId: string | undefined) => Promise<void>;
+  isActiveViewResource: (
+    pageType: PageViewType,
+    resourceId: string | undefined,
+  ) => Promise<boolean>;
+  recordPageView: (
+    pageType: PageViewType,
+    resourceId: string | undefined,
+  ) => Promise<void>;
   getPageViewStats: () => Promise<PageViewStatsEntity>;
   getDashboardPageViewStats: () => Promise<DashboardPageViewStatsEntity>;
   deleteUser: (id: string) => Promise<boolean>;
@@ -510,6 +519,7 @@ export type PresignService = {
     uploadId: string;
     objectKey: string;
     partNumber: number;
+    contentLength: number;
   }) => Promise<{
     uploadUrl: string;
     requiredHeaders: Record<string, string>;

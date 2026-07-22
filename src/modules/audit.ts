@@ -1,9 +1,10 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import type HonoAppType from "../types/honoAppType";
-import { badRequest, ok } from "../lib/http/response";
+import { badRequest, forbidden, ok } from "../lib/http/response";
 import { parseParams } from "../lib/validation/request";
 import type { AppDependencies } from "../lib/services/dependencies";
-import { requireActor, requirePermission } from "../lib/http/authz";
+import { requireActor } from "../lib/http/authz";
+import { isManagerLikeRole } from "../lib/authorization/policy";
 import { dataResponse, errorResponses } from "../lib/openapi/responses";
 import {
   ApiAuditLogSchema,
@@ -12,42 +13,6 @@ import {
 } from "../lib/openapi/schemas";
 
 type App = OpenAPIHono<HonoAppType>;
-
-const readPermissionResource = (
-  resourceType:
-    | "generation"
-    | "activity"
-    | "exhibition"
-    | "linktree"
-    | "linktree_item"
-    | "user"
-    | "attachment",
-):
-  | "generation"
-  | "activity"
-  | "exhibition"
-  | "linktree"
-  | "user"
-  | "site_setting" => {
-  switch (resourceType) {
-    case "generation":
-      return "generation";
-    case "activity":
-      return "activity";
-    case "exhibition":
-      return "exhibition";
-    case "linktree":
-    case "linktree_item":
-      return "linktree";
-    case "user":
-      return "user";
-    case "attachment":
-      // 첨부파일 감사 로그는 사이트 설정과 같은 회장단 권한으로 조회한다
-      return "site_setting";
-    default:
-      return "generation";
-  }
-};
 
 const listAuditLogsRoute = createRoute({
   method: "get",
@@ -74,6 +39,10 @@ export const registerAuditRoutes = (app: App, dependencies: AppDependencies) => 
       return actorResult.response;
     }
 
+    if (!isManagerLikeRole(actorResult.actor.role)) {
+      return forbidden(c);
+    }
+
     const params = parseParams(c, ApiAuditParamSchema);
     if (!params.success) {
       return badRequest(c, params.message);
@@ -82,16 +51,6 @@ export const registerAuditRoutes = (app: App, dependencies: AppDependencies) => 
     const query = ApiAuditQuerySchema.safeParse(c.req.query());
     if (!query.success) {
       return badRequest(c, query.error.issues[0]?.message ?? "잘못된 요청입니다.");
-    }
-
-    const denied = requirePermission(
-      c,
-      actorResult.actor,
-      readPermissionResource(params.data.resourceType),
-      "read",
-    );
-    if (denied) {
-      return denied;
     }
 
     const logs = await dependencies

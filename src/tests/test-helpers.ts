@@ -1,4 +1,5 @@
 import { expect, vi } from "vitest";
+import { createHmac } from "node:crypto";
 import { DEFAULT_SITE_SETTINGS } from "../shared/api-contracts";
 import { createApp } from "../app";
 import type { Actor, Role } from "../lib/authorization/types";
@@ -21,6 +22,14 @@ import type { OpenAPIDocument } from "../lib/openapi/merge";
 import type {
   ViewCountStore,
 } from "../lib/views/view-counts";
+import {
+  createMemoryMultipartUploadStateStore,
+  type MultipartUploadStateStore,
+} from "../lib/uploads/multipart-state";
+import {
+  createMemoryUploadReservationStore,
+  type UploadReservationStore,
+} from "../lib/uploads/upload-reservation";
 
 export const IDs = {
   generation: "10000000-0000-4000-8000-000000000001",
@@ -200,12 +209,31 @@ export const createLinktree = (
   ...overrides,
 });
 
-/** presign이 발급하는 공개 미디어 URL 형식(/api/public/media/{path}/{actorId}/{slot}/{token})을 그대로 따른다 */
+export const MANAGED_FILE_TEST_ENV = {
+  BETTER_AUTH_URL: "https://api.yonyoung.example",
+  R2_PUBLIC_URL_SIGNING_SECRET:
+    "test-managed-file-signing-secret-at-least-32-chars",
+} as const;
+
+/** presign이 발급하는 서명된 공개 미디어 URL 형식을 그대로 따른다. */
 export const buildManagedFileUrl = (
   resourcePath: "site" | "activities",
   actorId: string = IDs.president,
-): string =>
-  `https://api.yonyoung.example/api/public/media/${resourcePath}/${actorId}/file/11111111-1111-4111-8111-111111111111-report.pdf?sig=test-signature`;
+): string => {
+  const objectKey = `${resourcePath}/${actorId}/file/11111111-1111-4111-8111-111111111111-report.pdf`;
+  const signature = createHmac(
+    "sha256",
+    MANAGED_FILE_TEST_ENV.R2_PUBLIC_URL_SIGNING_SECRET,
+  )
+    .update(objectKey)
+    .digest("base64url");
+  const url = new URL(
+    `/api/public/media/${objectKey}`,
+    MANAGED_FILE_TEST_ENV.BETTER_AUTH_URL,
+  );
+  url.searchParams.set("sig", signature);
+  return url.toString();
+};
 
 export const createAttachment = (
   overrides: Partial<AttachmentEntity> = {},
@@ -297,6 +325,7 @@ export const createDataServiceMock = (
     listUsersByIds: async () => [],
     listUsersByGenerationIds: async () => [],
     countUsersByRole: async () => 0,
+    isActiveViewResource: async () => true,
     listUserResourceHistory: async () => ({
       items: [],
       page: 1,
@@ -376,11 +405,18 @@ export const createTestApp = (input: {
   getAuthOpenApiSchema?: () => Promise<OpenAPIDocument>;
   isDocsEnabled?: boolean;
   viewCountStore?: ViewCountStore;
+  allowPageViewWrite?: () => Promise<boolean> | boolean;
+  multipartUploadStateStore?: MultipartUploadStateStore;
+  uploadReservationStore?: UploadReservationStore;
 }) => {
   const noopViewCountStore: ViewCountStore = {
     recordView: async () => undefined,
     getViewCounts: async () => ({}),
   };
+  const multipartUploadStateStore =
+    input.multipartUploadStateStore ?? createMemoryMultipartUploadStateStore();
+  const uploadReservationStore =
+    input.uploadReservationStore ?? createMemoryUploadReservationStore();
 
   return createApp({
     /**
@@ -413,6 +449,12 @@ export const createTestApp = (input: {
       /** createApp 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () =>
         input.isDocsEnabled ?? true,
     getViewCountStore: () => input.viewCountStore ?? noopViewCountStore,
+    allowPageViewWrite: async () =>
+      input.allowPageViewWrite === undefined
+        ? true
+        : await input.allowPageViewWrite(),
+    getMultipartUploadStateStore: () => multipartUploadStateStore,
+    getUploadReservationStore: () => uploadReservationStore,
   });
 };
 

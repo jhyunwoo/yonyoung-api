@@ -6,6 +6,7 @@ import type {
   PresignService,
   UserEntity,
 } from "../lib/services/types";
+import { createMemoryUploadReservationStore } from "../lib/uploads/upload-reservation";
 
 const IDs = {
   generation: "10000000-0000-4000-8000-000000000001",
@@ -148,6 +149,7 @@ const createTestApp = (input: {
   dataService?: DataService;
   presignService?: PresignService;
 }) => {
+  const uploadReservationStore = createMemoryUploadReservationStore();
   return createApp({
         /**
      * resolveActor 값을 조회하거나 입력을 가공해 필요한 결과를 생성합니다.
@@ -168,6 +170,7 @@ const createTestApp = (input: {
      */
     getPresignService: () => input.presignService ?? createPresignServiceMock(),
     readR2TotalUsageBytes: async () => 0,
+    getUploadReservationStore: () => uploadReservationStore,
   });
 };
 

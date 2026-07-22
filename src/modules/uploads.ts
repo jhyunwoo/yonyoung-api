@@ -2,6 +2,7 @@ import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import type HonoAppType from "../types/honoAppType";
 import {
   badRequest,
+  conflict,
   forbidden,
   internalError,
   noContent,
@@ -12,6 +13,7 @@ import {
 } from "../lib/http/response";
 import { parseBody } from "../lib/validation/request";
 import type { AppDependencies } from "../lib/services/dependencies";
+import type { PresignService } from "../lib/services/types";
 import { requireActor } from "../lib/http/authz";
 import { can, isMemberLikeRole } from "../lib/authorization/policy";
 import type { Actor, Resource, Role } from "../lib/authorization/types";
@@ -38,10 +40,25 @@ import {
   ALLOWED_ATTACHMENT_CONTENT_TYPES,
   ALLOWED_IMAGE_CONTENT_TYPES,
   UPLOAD_LIMITS,
+  PRESIGNED_URL_EXPIRES_IN_SECONDS,
+  isNoSuchMultipartUploadError,
   parseManagedObjectKey,
 } from "../lib/storage/presign";
 import type { ManagedUploadResourcePath, ManagedUploadSlot } from "../lib/storage/presign";
-import { R2_STORAGE_LIMIT_BYTES } from "../lib/storage/usage";
+import {
+  MULTIPART_UPLOAD_EXPIRED_CLEANUP_LIMIT,
+  MULTIPART_UPLOAD_STATE_TTL_MS,
+  MultipartUploadLimitError,
+  type MultipartUploadState,
+  type MultipartUploadStateStore,
+} from "../lib/uploads/multipart-state";
+import {
+  UPLOAD_RESERVATION_OBSERVATION_MAX_AGE_MS,
+  UPLOAD_RESERVATION_SETTLEMENT_GRACE_MS,
+  UploadReservationLimitError,
+  UploadStorageCapacityError,
+  type UploadReservationStore,
+} from "../lib/uploads/upload-reservation";
 
 type App = OpenAPIHono<HonoAppType>;
 type ManagedResource = Extract<
@@ -50,6 +67,14 @@ type ManagedResource = Extract<
 >;
 type UploadResourcePath = ManagedUploadResourcePath;
 type UploadSlot = ManagedUploadSlot;
+
+// Direct PUT has no application completion callback, so retain its capacity
+// substantially longer than the one-hour signature. Incomplete R2 multipart
+// uploads are retained for seven days by default; keep their reservation for
+// an extra day unless an explicit abort/completion releases it first.
+const SINGLE_UPLOAD_CAPACITY_RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
+const MULTIPART_UPLOAD_CAPACITY_RESERVATION_TTL_MS = 8 * 24 * 60 * 60 * 1000;
+const SINGLE_UPLOAD_GRANT_TTL_MS = PRESIGNED_URL_EXPIRES_IN_SECONDS * 1000;
 
 const canCreateOrUpdate = (role: Role, resource: Resource) => {
   return can(role, resource, "create") || can(role, resource, "update");
@@ -105,27 +130,115 @@ const readUploadValidationResponse = (
   return payloadTooLarge(c, validationResult.message);
 };
 
-const ensureStorageCapacityBeforeUpload = async (input: {
+type ActiveUploadReservation = {
+  id: string;
+  store: UploadReservationStore;
+};
+
+type UploadReservationResult =
+  | { reservation: ActiveUploadReservation; response?: never }
+  | { response: Response; reservation?: never };
+
+const reserveStorageCapacityBeforeUpload = async (input: {
   c: Parameters<typeof badRequest>[0];
   dependencies: AppDependencies;
+  actorId: string;
   fileSize: number;
-}): Promise<Response | null> => {
+  grantTtlMs: number;
+  capacityTtlMs: number;
+}): Promise<UploadReservationResult> => {
+  let store: UploadReservationStore;
   try {
-    const usedBytes = await input.dependencies.readR2TotalUsageBytes(input.c);
-    if (usedBytes + input.fileSize > R2_STORAGE_LIMIT_BYTES) {
-      return payloadTooLarge(
-        input.c,
-        "버킷 저장공간 10GB 한도를 초과할 수 있어 업로드를 차단했습니다.",
-      );
+    store = input.dependencies.getUploadReservationStore(input.c);
+    await store.assertActorCapacity(input.actorId, input.fileSize, Date.now());
+  } catch (error) {
+    if (error instanceof UploadReservationLimitError) {
+      return { response: conflict(input.c, error.message) };
     }
-
-    return null;
-  } catch {
-    return internalError(
-      input.c,
-      "버킷 저장공간 사용량을 확인할 수 없어 업로드를 차단했습니다.",
-    );
+    return {
+      response: internalError(
+        input.c,
+        "업로드 용량 예약 상태를 확인할 수 없어 업로드를 차단했습니다.",
+      ),
+    };
   }
+
+  const observedAt = Date.now();
+  let observedUsedBytes: number;
+  try {
+    observedUsedBytes = await input.dependencies.readR2TotalUsageBytes(input.c);
+  } catch {
+    return {
+      response: internalError(
+        input.c,
+        "버킷 저장공간 사용량을 확인할 수 없어 업로드를 차단했습니다.",
+      ),
+    };
+  }
+  if (!Number.isSafeInteger(observedUsedBytes) || observedUsedBytes < 0) {
+    return {
+      response: internalError(
+        input.c,
+        "버킷 저장공간 사용량 응답이 올바르지 않아 업로드를 차단했습니다.",
+      ),
+    };
+  }
+  if (Date.now() - observedAt > UPLOAD_RESERVATION_OBSERVATION_MAX_AGE_MS) {
+    return {
+      response: internalError(
+        input.c,
+        "버킷 저장공간 확인 시간이 초과되어 업로드를 차단했습니다.",
+      ),
+    };
+  }
+
+  const id = crypto.randomUUID();
+  const now = Date.now();
+  const grantExpiresAt = now + input.grantTtlMs;
+  const expiresAt = now + input.capacityTtlMs;
+  try {
+    await store.reserve({
+      id,
+      actorId: input.actorId,
+      fileSize: input.fileSize,
+      observedUsedBytes,
+      observedAt,
+      grantExpiresAt,
+      expiresAt,
+    });
+    return { reservation: { id, store } };
+  } catch (error) {
+    if (error instanceof UploadReservationLimitError) {
+      return { response: conflict(input.c, error.message) };
+    }
+    if (error instanceof UploadStorageCapacityError) {
+      return { response: payloadTooLarge(input.c, error.message) };
+    }
+    return {
+      response: internalError(
+        input.c,
+        "업로드 용량 예약을 생성할 수 없어 업로드를 차단했습니다.",
+      ),
+    };
+  }
+};
+
+const releaseUploadReservation = async (
+  reservation: ActiveUploadReservation,
+): Promise<void> => {
+  await reservation.store.remove(reservation.id).catch(() => undefined);
+};
+
+const settleUploadReservation = async (
+  store: UploadReservationStore,
+  reservationId: string,
+): Promise<void> => {
+  await store
+    .settle(
+      reservationId,
+      Date.now() + UPLOAD_RESERVATION_SETTLEMENT_GRACE_MS,
+    )
+    .catch(() => undefined);
 };
 
 const isUserProfileUploadAllowed = (role: Role): boolean => {
@@ -161,6 +274,214 @@ const ensureMultipartOwnership = (input: {
   return null;
 };
 
+const cleanupExpiredMultipartUploadsForActor = async (input: {
+  stateStore: MultipartUploadStateStore;
+  reservationStore: UploadReservationStore;
+  presignService: PresignService;
+  actorId: string;
+  now: number;
+}): Promise<void> => {
+  const expiredStates = await input.stateStore.listExpiredByActor(
+    input.actorId,
+    input.now,
+    MULTIPART_UPLOAD_EXPIRED_CLEANUP_LIMIT,
+  );
+
+  for (const state of expiredStates) {
+    try {
+      let terminalStateIsAmbiguous = false;
+      try {
+        await input.presignService.abortMultipartUpload({
+          uploadId: state.uploadId,
+          objectKey: state.objectKey,
+        });
+      } catch (error) {
+        if (!isNoSuchMultipartUploadError(error)) {
+          throw error;
+        }
+        terminalStateIsAmbiguous = true;
+      }
+      await input.stateStore.remove(state.uploadId, state.objectKey);
+      if (state.reservationId) {
+        if (terminalStateIsAmbiguous) {
+          await settleUploadReservation(
+            input.reservationStore,
+            state.reservationId,
+          );
+        } else {
+          await input.reservationStore
+            .remove(state.reservationId)
+            .catch(() => undefined);
+        }
+      }
+    } catch {
+      // Keep local state when remote cleanup fails so a later request can retry.
+    }
+  }
+};
+
+const prepareMultipartUploadForReservation = async (input: {
+  c: Parameters<typeof badRequest>[0];
+  dependencies: AppDependencies;
+  actorId: string;
+}): Promise<Response | null> => {
+  try {
+    const stateStore = input.dependencies.getMultipartUploadStateStore(input.c);
+    await cleanupExpiredMultipartUploadsForActor({
+      stateStore,
+      reservationStore:
+        input.dependencies.getUploadReservationStore(input.c),
+      presignService: input.dependencies.getPresignService(input.c),
+      actorId: input.actorId,
+      now: Date.now(),
+    });
+    await stateStore.assertActorCapacity(input.actorId, Date.now());
+    return null;
+  } catch (error) {
+    if (error instanceof MultipartUploadLimitError) {
+      return conflict(input.c, error.message);
+    }
+    return internalError(
+      input.c,
+      "멀티파트 업로드 상태를 확인할 수 없어 업로드를 차단했습니다.",
+    );
+  }
+};
+
+const initiateTrackedMultipartUpload = async (input: {
+  c: Parameters<typeof badRequest>[0];
+  dependencies: AppDependencies;
+  actorId: string;
+  upload: {
+    resource: UploadResourcePath;
+    slot: UploadSlot;
+    fileName: string;
+    contentType: string;
+    fileSize: number;
+  };
+  expectedPartCount: number;
+  reservation: ActiveUploadReservation;
+}) => {
+  const stateStore = input.dependencies.getMultipartUploadStateStore(input.c);
+  const presignService = input.dependencies.getPresignService(input.c);
+  const now = Date.now();
+  try {
+    const data = await presignService.initiateMultipartUpload({
+      actorId: input.actorId,
+      ...input.upload,
+    });
+
+    try {
+      await stateStore.reserve({
+        uploadId: data.uploadId,
+        objectKey: data.objectKey,
+        reservationId: input.reservation.id,
+        actorId: input.actorId,
+        contentType: input.upload.contentType,
+        fileSize: input.upload.fileSize,
+        partSize: UPLOAD_LIMITS.multipartPartSizeBytes,
+        maxPartNumber: input.expectedPartCount,
+        expiresAt: now + MULTIPART_UPLOAD_STATE_TTL_MS,
+      });
+    } catch (error) {
+      try {
+        await presignService.abortMultipartUpload({
+          uploadId: data.uploadId,
+          objectKey: data.objectKey,
+        });
+      } catch {
+        // State reservation failed, so the remote upload is cleaned up best-effort.
+      }
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    await releaseUploadReservation(input.reservation);
+    throw error;
+  }
+};
+
+type ActiveMultipartStateResult =
+  | {
+      state: MultipartUploadState;
+      stateStore: MultipartUploadStateStore;
+      response?: never;
+    }
+  | {
+      response: Response;
+      state?: never;
+      stateStore?: never;
+    };
+
+const readActiveMultipartState = async (input: {
+  c: Parameters<typeof badRequest>[0];
+  dependencies: AppDependencies;
+  actor: Pick<Actor, "id">;
+  uploadId: string;
+  objectKey: string;
+}): Promise<ActiveMultipartStateResult> => {
+  const stateStore = input.dependencies.getMultipartUploadStateStore(input.c);
+  const state = await stateStore.get(input.uploadId, input.objectKey);
+  if (!state) {
+    return {
+      response: badRequest(
+        input.c,
+        "멀티파트 업로드 세션이 유효하지 않거나 만료되었습니다.",
+      ),
+    };
+  }
+
+  if (state.actorId !== input.actor.id) {
+    return {
+      response: forbidden(input.c, "본인 소유 업로드만 처리할 수 있습니다."),
+    };
+  }
+
+  if (state.expiresAt <= Date.now()) {
+    let remoteAbortSucceeded = false;
+    let terminalStateIsAmbiguous = false;
+    try {
+      try {
+        await input.dependencies.getPresignService(input.c).abortMultipartUpload({
+          uploadId: input.uploadId,
+          objectKey: input.objectKey,
+        });
+      } catch (error) {
+        if (!isNoSuchMultipartUploadError(error)) {
+          throw error;
+        }
+        terminalStateIsAmbiguous = true;
+      }
+      remoteAbortSucceeded = true;
+    } catch {
+      // Keep local state so a later request can retry remote cleanup.
+    }
+    if (remoteAbortSucceeded) {
+      await stateStore.remove(input.uploadId, input.objectKey);
+      if (state.reservationId) {
+        const reservationStore =
+          input.dependencies.getUploadReservationStore(input.c);
+        if (terminalStateIsAmbiguous) {
+          await settleUploadReservation(reservationStore, state.reservationId);
+        } else {
+          await reservationStore
+            .remove(state.reservationId)
+            .catch(() => undefined);
+        }
+      }
+    }
+    return {
+      response: badRequest(
+        input.c,
+        "멀티파트 업로드 세션이 유효하지 않거나 만료되었습니다.",
+      ),
+    };
+  }
+
+  return { state, stateStore };
+};
+
 type ResourcePresignRouteOptions = {
   routePath: string;
   operationId: string;
@@ -192,6 +513,7 @@ const registerResourcePresignRoute = (
       400: errorResponses[400],
       401: errorResponses[401],
       403: errorResponses[403],
+      409: errorResponses[409],
       413: errorResponses[413],
       415: errorResponses[415],
       500: errorResponses[500],
@@ -222,13 +544,16 @@ const registerResourcePresignRoute = (
       return validationResponse;
     }
 
-    const storageCapacityResponse = await ensureStorageCapacityBeforeUpload({
+    const reservationResult = await reserveStorageCapacityBeforeUpload({
       c,
       dependencies,
+      actorId: actorResult.actor.id,
       fileSize: body.data.fileSize,
+      grantTtlMs: SINGLE_UPLOAD_GRANT_TTL_MS,
+      capacityTtlMs: SINGLE_UPLOAD_CAPACITY_RESERVATION_TTL_MS,
     });
-    if (storageCapacityResponse) {
-      return storageCapacityResponse;
+    if (reservationResult.response) {
+      return reservationResult.response;
     }
 
     try {
@@ -242,6 +567,7 @@ const registerResourcePresignRoute = (
       });
       return ok(c, data, 201);
     } catch (error) {
+      await releaseUploadReservation(reservationResult.reservation);
       if (error instanceof MissingStorageConfigError) {
         return internalError(
           c,
@@ -278,6 +604,7 @@ const registerResourceMultipartInitRoute = (
       400: errorResponses[400],
       401: errorResponses[401],
       403: errorResponses[403],
+      409: errorResponses[409],
       413: errorResponses[413],
       415: errorResponses[415],
       500: errorResponses[500],
@@ -318,26 +645,47 @@ const registerResourceMultipartInitRoute = (
       );
     }
 
-    const storageCapacityResponse = await ensureStorageCapacityBeforeUpload({
+    const preparationResponse = await prepareMultipartUploadForReservation({
       c,
       dependencies,
-      fileSize: body.data.fileSize,
+      actorId: actorResult.actor.id,
     });
-    if (storageCapacityResponse) {
-      return storageCapacityResponse;
+    if (preparationResponse) {
+      return preparationResponse;
+    }
+
+    const reservationResult = await reserveStorageCapacityBeforeUpload({
+      c,
+      dependencies,
+      actorId: actorResult.actor.id,
+      fileSize: body.data.fileSize,
+      grantTtlMs: MULTIPART_UPLOAD_STATE_TTL_MS,
+      capacityTtlMs: MULTIPART_UPLOAD_CAPACITY_RESERVATION_TTL_MS,
+    });
+    if (reservationResult.response) {
+      return reservationResult.response;
     }
 
     try {
-      const data = await dependencies.getPresignService(c).initiateMultipartUpload({
+      const data = await initiateTrackedMultipartUpload({
+        c,
+        dependencies,
         actorId: actorResult.actor.id,
-        resource: options.uploadResourcePath,
-        slot: options.slot,
-        fileName: body.data.fileName,
-        contentType: body.data.contentType,
-        fileSize: body.data.fileSize,
+        upload: {
+          resource: options.uploadResourcePath,
+          slot: options.slot,
+          fileName: body.data.fileName,
+          contentType: body.data.contentType,
+          fileSize: body.data.fileSize,
+        },
+        expectedPartCount,
+        reservation: reservationResult.reservation,
       });
       return ok(c, data, 201);
     } catch (error) {
+      if (error instanceof MultipartUploadLimitError) {
+        return conflict(c, error.message);
+      }
       if (error instanceof MissingStorageConfigError) {
         return internalError(
           c,
@@ -363,6 +711,7 @@ const userProfilePresignRoute = createRoute({
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
+    409: errorResponses[409],
     413: errorResponses[413],
     415: errorResponses[415],
     500: errorResponses[500],
@@ -389,6 +738,7 @@ const userProfileMultipartInitRoute = createRoute({
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
+    409: errorResponses[409],
     413: errorResponses[413],
     415: errorResponses[415],
     500: errorResponses[500],
@@ -415,6 +765,7 @@ const multipartPartRoute = createRoute({
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
+    422: errorResponses[422],
     500: errorResponses[500],
   },
 });
@@ -574,13 +925,16 @@ export const registerUploadRoutes = (
       return validationResponse;
     }
 
-    const storageCapacityResponse = await ensureStorageCapacityBeforeUpload({
+    const reservationResult = await reserveStorageCapacityBeforeUpload({
       c,
       dependencies,
+      actorId: actorResult.actor.id,
       fileSize: body.data.fileSize,
+      grantTtlMs: SINGLE_UPLOAD_GRANT_TTL_MS,
+      capacityTtlMs: SINGLE_UPLOAD_CAPACITY_RESERVATION_TTL_MS,
     });
-    if (storageCapacityResponse) {
-      return storageCapacityResponse;
+    if (reservationResult.response) {
+      return reservationResult.response;
     }
 
     try {
@@ -594,6 +948,7 @@ export const registerUploadRoutes = (
       });
       return ok(c, data, 201);
     } catch (error) {
+      await releaseUploadReservation(reservationResult.reservation);
       if (error instanceof MissingStorageConfigError) {
         return internalError(
           c,
@@ -637,26 +992,47 @@ export const registerUploadRoutes = (
       );
     }
 
-    const storageCapacityResponse = await ensureStorageCapacityBeforeUpload({
+    const preparationResponse = await prepareMultipartUploadForReservation({
       c,
       dependencies,
-      fileSize: body.data.fileSize,
+      actorId: actorResult.actor.id,
     });
-    if (storageCapacityResponse) {
-      return storageCapacityResponse;
+    if (preparationResponse) {
+      return preparationResponse;
+    }
+
+    const reservationResult = await reserveStorageCapacityBeforeUpload({
+      c,
+      dependencies,
+      actorId: actorResult.actor.id,
+      fileSize: body.data.fileSize,
+      grantTtlMs: MULTIPART_UPLOAD_STATE_TTL_MS,
+      capacityTtlMs: MULTIPART_UPLOAD_CAPACITY_RESERVATION_TTL_MS,
+    });
+    if (reservationResult.response) {
+      return reservationResult.response;
     }
 
     try {
-      const data = await dependencies.getPresignService(c).initiateMultipartUpload({
+      const data = await initiateTrackedMultipartUpload({
+        c,
+        dependencies,
         actorId: actorResult.actor.id,
-        resource: "users",
-        slot: "profile",
-        fileName: body.data.fileName,
-        contentType: body.data.contentType,
-        fileSize: body.data.fileSize,
+        upload: {
+          resource: "users",
+          slot: "profile",
+          fileName: body.data.fileName,
+          contentType: body.data.contentType,
+          fileSize: body.data.fileSize,
+        },
+        expectedPartCount,
+        reservation: reservationResult.reservation,
       });
       return ok(c, data, 201);
     } catch (error) {
+      if (error instanceof MultipartUploadLimitError) {
+        return conflict(c, error.message);
+      }
       if (error instanceof MissingStorageConfigError) {
         return internalError(
           c,
@@ -688,9 +1064,29 @@ export const registerUploadRoutes = (
     }
 
     try {
+      const activeState = await readActiveMultipartState({
+        c,
+        dependencies,
+        actor: actorResult.actor,
+        uploadId: body.data.uploadId,
+        objectKey: body.data.objectKey,
+      });
+      if (activeState.response) {
+        return activeState.response;
+      }
+
+      if (body.data.partNumber > activeState.state.maxPartNumber) {
+        return unprocessableEntity(c, "partNumber가 초기화된 파트 범위를 벗어났습니다.");
+      }
+
+      const contentLength =
+        body.data.partNumber === activeState.state.maxPartNumber
+          ? activeState.state.fileSize -
+            activeState.state.partSize * (activeState.state.maxPartNumber - 1)
+          : activeState.state.partSize;
       const data = await dependencies
         .getPresignService(c)
-        .issueMultipartUploadPartUrl(body.data);
+        .issueMultipartUploadPartUrl({ ...body.data, contentLength });
       return ok(c, data);
     } catch {
       return internalError(c, "멀티파트 파트 URL 발급에 실패했습니다.");
@@ -723,9 +1119,62 @@ export const registerUploadRoutes = (
     }
 
     try {
-      const data = await dependencies
-        .getPresignService(c)
-        .completeMultipartUpload(body.data);
+      const activeState = await readActiveMultipartState({
+        c,
+        dependencies,
+        actor: actorResult.actor,
+        uploadId: body.data.uploadId,
+        objectKey: body.data.objectKey,
+      });
+      if (activeState.response) {
+        return activeState.response;
+      }
+
+      const sortedPartNumbers = body.data.parts
+        .map((part) => part.partNumber)
+        .sort((left, right) => left - right);
+      const hasExactPartSet =
+        sortedPartNumbers.length === activeState.state.maxPartNumber &&
+        sortedPartNumbers.every((partNumber, index) => partNumber === index + 1);
+      if (!hasExactPartSet) {
+        return unprocessableEntity(
+          c,
+          "초기화 시 확정된 모든 파트를 빠짐없이 제출해야 합니다.",
+        );
+      }
+
+      let data;
+      try {
+        data = await dependencies
+          .getPresignService(c)
+          .completeMultipartUpload(body.data);
+      } catch (error) {
+        if (!isNoSuchMultipartUploadError(error)) {
+          throw error;
+        }
+
+        // The remote upload is already terminal (completed, aborted, or
+        // lifecycle-expired). Drop stale local state so retries cannot remain
+        // permanently wedged behind an upload that no longer exists.
+        await activeState.stateStore.remove(
+          body.data.uploadId,
+          body.data.objectKey,
+        );
+        if (activeState.state.reservationId) {
+          await settleUploadReservation(
+            dependencies.getUploadReservationStore(c),
+            activeState.state.reservationId,
+          );
+        }
+        return badRequest(c, "멀티파트 업로드가 이미 종료되었거나 만료되었습니다.");
+      }
+      await activeState.stateStore.remove(body.data.uploadId, body.data.objectKey);
+      if (activeState.state.reservationId) {
+        await settleUploadReservation(
+          dependencies.getUploadReservationStore(c),
+          activeState.state.reservationId,
+        );
+      }
       return ok(c, data);
     } catch {
       return internalError(c, "멀티파트 업로드 완료 처리에 실패했습니다.");
@@ -753,7 +1202,40 @@ export const registerUploadRoutes = (
     }
 
     try {
-      await dependencies.getPresignService(c).abortMultipartUpload(body.data);
+      const activeState = await readActiveMultipartState({
+        c,
+        dependencies,
+        actor: actorResult.actor,
+        uploadId: body.data.uploadId,
+        objectKey: body.data.objectKey,
+      });
+      if (activeState.response) {
+        return activeState.response;
+      }
+
+      let terminalStateIsAmbiguous = false;
+      try {
+        await dependencies.getPresignService(c).abortMultipartUpload(body.data);
+      } catch (error) {
+        if (!isNoSuchMultipartUploadError(error)) {
+          throw error;
+        }
+        terminalStateIsAmbiguous = true;
+      }
+      await activeState.stateStore.remove(body.data.uploadId, body.data.objectKey);
+      if (activeState.state.reservationId) {
+        const reservationStore = dependencies.getUploadReservationStore(c);
+        if (terminalStateIsAmbiguous) {
+          await settleUploadReservation(
+            reservationStore,
+            activeState.state.reservationId,
+          );
+        } else {
+          await reservationStore
+            .remove(activeState.state.reservationId)
+            .catch(() => undefined);
+        }
+      }
       return noContent(c);
     } catch {
       return internalError(c, "멀티파트 업로드 중단 처리에 실패했습니다.");

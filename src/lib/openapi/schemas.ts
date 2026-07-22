@@ -9,6 +9,7 @@ import {
   ALLOWED_IMAGE_CONTENT_TYPES,
   UPLOAD_LIMITS,
 } from "../storage/presign";
+import { isHttpUrl } from "../validation/url";
 
 const EXAMPLE_ID = "11111111-1111-4111-8111-111111111111";
 const EXAMPLE_PARENT_ID = "22222222-2222-4222-8222-222222222222";
@@ -48,6 +49,17 @@ const urlField = (description: string, example: string) =>
     description,
     example,
   });
+
+/** 공개 응답에 노출될 URL을 받는 쓰기 입력은 실행 가능한 비-HTTP 스킴을 허용하지 않는다. */
+const httpUrlInputField = (description: string, example: string) =>
+  z
+    .string()
+    .url()
+    .refine(isHttpUrl, "URL은 http(s) 스킴만 사용할 수 있습니다.")
+    .openapi({
+      description,
+      example,
+    });
 
 const studentNumberField = (description: string, example: string) =>
   z
@@ -377,7 +389,7 @@ export const ApiCreateActivitySchema = z
       description: "활동 종료 시각 (Unix timestamp(ms))",
       example: EXAMPLE_TIMESTAMP_MS_END,
     }),
-    coverImageUrl: urlField(
+    coverImageUrl: httpUrlInputField(
       "활동 대표 이미지 공개 URL",
       "https://cdn.yonyoung.example/activities/cover/new-cover.jpg",
     ),
@@ -410,7 +422,7 @@ export const ApiUpdateActivitySchema = z
       description: "활동 종료 시각 (Unix timestamp(ms))",
       example: EXAMPLE_TIMESTAMP_MS_END,
     }),
-    coverImageUrl: urlField(
+    coverImageUrl: httpUrlInputField(
       "활동 대표 이미지 공개 URL",
       "https://cdn.yonyoung.example/activities/cover/new-cover.jpg",
     ).optional(),
@@ -447,7 +459,7 @@ export const ApiListActivitiesQuerySchema = z
 
 export const ApiCreateActivityImageSchema = z
   .object({
-    imageUrl: urlField(
+    imageUrl: httpUrlInputField(
       "추가할 활동 세부 이미지 URL",
       "https://cdn.yonyoung.example/activities/detail/new-detail.jpg",
     ),
@@ -460,7 +472,7 @@ export const ApiCreateActivityImageSchema = z
 
 export const ApiUpdateActivityImageSchema = z
   .object({
-    imageUrl: urlField(
+    imageUrl: httpUrlInputField(
       "수정할 활동 세부 이미지 URL",
       "https://cdn.yonyoung.example/activities/detail/updated-detail.jpg",
     ).optional(),
@@ -483,7 +495,7 @@ const ApiUpdateActivityImageBatchItemSchema = z
       description: "수정할 세부 이미지 UUID",
       example: EXAMPLE_IMAGE_ID,
     }),
-    imageUrl: urlField(
+    imageUrl: httpUrlInputField(
       "수정할 활동 세부 이미지 URL",
       "https://cdn.yonyoung.example/activities/detail/updated-detail.jpg",
     ).optional(),
@@ -596,7 +608,7 @@ export const ApiCreateExhibitionSchema = z
       description: "전시 장소",
       example: "서울시 성동구 아트홀 2관",
     }),
-    coverImageUrl: urlField(
+    coverImageUrl: httpUrlInputField(
       "전시 대표 이미지 공개 URL",
       "https://cdn.yonyoung.example/exhibitions/cover/new-cover.jpg",
     ),
@@ -626,7 +638,7 @@ export const ApiListExhibitionsQuerySchema = z
 
 export const ApiCreateExhibitionImageSchema = z
   .object({
-    imageUrl: urlField(
+    imageUrl: httpUrlInputField(
       "추가할 전시 세부 이미지 URL",
       "https://cdn.yonyoung.example/exhibitions/detail/new-detail.jpg",
     ),
@@ -639,7 +651,7 @@ export const ApiCreateExhibitionImageSchema = z
 
 export const ApiUpdateExhibitionImageSchema = z
   .object({
-    imageUrl: urlField(
+    imageUrl: httpUrlInputField(
       "수정할 전시 세부 이미지 URL",
       "https://cdn.yonyoung.example/exhibitions/detail/updated-detail.jpg",
     ).optional(),
@@ -662,7 +674,7 @@ const ApiUpdateExhibitionImageBatchItemSchema = z
       description: "수정할 세부 이미지 UUID",
       example: EXAMPLE_IMAGE_ID,
     }),
-    imageUrl: urlField(
+    imageUrl: httpUrlInputField(
       "수정할 전시 세부 이미지 URL",
       "https://cdn.yonyoung.example/exhibitions/detail/updated-detail.jpg",
     ).optional(),
@@ -748,15 +760,6 @@ export const ApiAttachmentSchema = z
   })
   .openapi("ApiAttachment");
 
-const isHttpUrl = (value: string): boolean => {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "https:" || parsed.protocol === "http:";
-  } catch {
-    return false;
-  }
-};
-
 export const ApiCreateAttachmentSchema = z
   .object({
     scope: ApiAttachmentScopeSchema,
@@ -779,7 +782,7 @@ export const ApiCreateAttachmentSchema = z
         description: "표시용 제목 (1~200자)",
         example: "월간연영회 2026년 6월호",
       }),
-    fileUrl: urlField(
+    fileUrl: httpUrlInputField(
       "업로드 완료 후 발급받은 공개 미디어 URL (링크 항목이면 생략)",
       EXAMPLE_ATTACHMENT_FILE_URL,
     ).optional(),
@@ -795,15 +798,10 @@ export const ApiCreateAttachmentSchema = z
       description: "파일 MIME 타입 (허용 목록 내, 링크 항목이면 생략)",
       example: "application/pdf",
     }),
-    linkUrl: z
-      .string()
-      .url("linkUrl 형식이 올바르지 않습니다.")
-      .refine(isHttpUrl, "linkUrl은 http(s) URL만 사용할 수 있습니다.")
-      .optional()
-      .openapi({
-        description: "외부 링크 URL (예: 구글 독스 공유 링크, 파일 항목이면 생략)",
-        example: "https://docs.google.com/spreadsheets/d/abc",
-      }),
+    linkUrl: httpUrlInputField(
+      "외부 링크 URL (예: 구글 독스 공유 링크, 파일 항목이면 생략)",
+      "https://docs.google.com/spreadsheets/d/abc",
+    ).optional(),
     sortOrder: z.number().int().nonnegative().default(0).openapi({
       description: "노출 순서 (기본값 0)",
       example: 0,
@@ -887,6 +885,21 @@ const ApiShowcaseImageUrlsSchema = z
     },
   );
 
+const ApiShowcaseImageUrlsInputSchema = z
+  .array(
+    httpUrlInputField(
+      "대표 작품 사진 URL",
+      "https://cdn.yonyoung.example/users/profile/showcase-1.jpg",
+    ),
+  )
+  .max(10, "대표 작품 사진은 최대 10장까지 등록할 수 있습니다.")
+  .refine(
+    (items) => new Set(items).size === items.length,
+    {
+      message: "중복된 showcaseImageUrls를 전달할 수 없습니다.",
+    },
+  );
+
 export const ApiLinktreeItemSchema = z
   .object({
     id: z.string().uuid().openapi({
@@ -950,7 +963,7 @@ export const ApiCreateLinktreeItemSchema = z
       description: "링크 아이템 이름",
       example: "YouTube",
     }),
-    link: urlField(
+    link: httpUrlInputField(
       "링크 아이템 URL",
       "https://youtube.com/@yonyoung",
     ),
@@ -1027,13 +1040,30 @@ export const ApiSiteSettingsSchema = z
   })
   .openapi("ApiSiteSettings");
 
-export const ApiUpdateSiteSettingsSchema = ApiSiteSettingsSchema.partial().openapi(
-  "ApiUpdateSiteSettingsInput",
-);
+export const ApiUpdateSiteSettingsSchema = ApiSiteSettingsSchema.partial()
+  .extend({
+    footerOpenChatUrl: httpUrlInputField(
+      "footer 오픈 카톡방 링크",
+      DEFAULT_SITE_SETTINGS.footerOpenChatUrl,
+    ).optional(),
+  })
+  .openapi("ApiUpdateSiteSettingsInput");
 
 const ApiRecruitingPromotionImageUrlsSchema = z
   .array(
     urlField(
+      "모집 계획 홍보 이미지 URL",
+      "https://cdn.yonyoung.example/recruiting/image/recruiting-1.jpg",
+    ),
+  )
+  .max(10, "홍보 이미지는 최대 10장까지 등록할 수 있습니다.")
+  .refine((items) => new Set(items).size === items.length, {
+    message: "중복된 promotionImageUrls를 전달할 수 없습니다.",
+  });
+
+const ApiRecruitingPromotionImageUrlsInputSchema = z
+  .array(
+    httpUrlInputField(
       "모집 계획 홍보 이미지 URL",
       "https://cdn.yonyoung.example/recruiting/image/recruiting-1.jpg",
     ),
@@ -1101,7 +1131,7 @@ export const ApiUpsertCurrentRecruitingPlanSchema = z
         description: "모집 계획 상세 리치텍스트 HTML 본문",
         example: "<p>사진에 열정이 있는 분들을 모집합니다.</p>",
       }),
-    promotionImageUrls: ApiRecruitingPromotionImageUrlsSchema.openapi({
+    promotionImageUrls: ApiRecruitingPromotionImageUrlsInputSchema.openapi({
       description: "모집 계획 홍보 이미지 URL 목록 (최대 10장)",
       example: [
         "https://cdn.yonyoung.example/recruiting/image/recruiting-1.jpg",
@@ -1410,11 +1440,13 @@ export const ApiAdminUpdateUserSchema = z
       description: "사용자 이름(관리자 수정 가능)",
       example: "홍길동",
     }),
-    image: z.string().url().nullable().optional().openapi({
-      description: "프로필 이미지 URL(관리자 수정 가능)",
-      example: "https://cdn.yonyoung.example/users/profile/member-new.png",
-    }),
-    showcaseImageUrls: ApiShowcaseImageUrlsSchema.optional().openapi({
+    image: httpUrlInputField(
+      "프로필 이미지 URL(관리자 수정 가능)",
+      "https://cdn.yonyoung.example/users/profile/member-new.png",
+    )
+      .nullable()
+      .optional(),
+    showcaseImageUrls: ApiShowcaseImageUrlsInputSchema.optional().openapi({
       description: "대표 작품 사진 URL 목록(관리자 수정 가능, 최대 10장)",
       example: ["https://cdn.yonyoung.example/users/profile/showcase-1.jpg"],
     }),
@@ -1468,10 +1500,12 @@ export const ApiAdminUpdateUserSchema = z
       description: "협업 가능 여부(true/false, 관리자 수정 가능)",
       example: true,
     }),
-    personalLink: z.string().url().nullable().optional().openapi({
-      description: "개인 링크 URL(관리자 수정 가능)",
-      example: "https://example.com/my-portfolio",
-    }),
+    personalLink: httpUrlInputField(
+      "개인 링크 URL(관리자 수정 가능)",
+      "https://example.com/my-portfolio",
+    )
+      .nullable()
+      .optional(),
     role: z
       .enum([
         "president",
@@ -1506,11 +1540,13 @@ export const ApiAdminUpdateUserSchema = z
 
 export const ApiMemberProfileUpdateSchema = z
   .object({
-    image: z.string().url().nullable().optional().openapi({
-      description: "본인 프로필 이미지 URL 수정",
-      example: "https://cdn.yonyoung.example/users/profile/member-self.png",
-    }),
-    showcaseImageUrls: ApiShowcaseImageUrlsSchema.optional().openapi({
+    image: httpUrlInputField(
+      "본인 프로필 이미지 URL 수정",
+      "https://cdn.yonyoung.example/users/profile/member-self.png",
+    )
+      .nullable()
+      .optional(),
+    showcaseImageUrls: ApiShowcaseImageUrlsInputSchema.optional().openapi({
       description: "본인 대표 작품 사진 URL 목록 수정 (최대 10장)",
       example: ["https://cdn.yonyoung.example/users/profile/showcase-1.jpg"],
     }),
@@ -1574,10 +1610,12 @@ export const ApiMemberProfileUpdateSchema = z
       description: "본인 협업 가능 여부 수정(true/false)",
       example: true,
     }),
-    personalLink: z.string().url().nullable().optional().openapi({
-      description: "본인 개인 링크 URL 수정",
-      example: "https://example.com/my-portfolio",
-    }),
+    personalLink: httpUrlInputField(
+      "본인 개인 링크 URL 수정",
+      "https://example.com/my-portfolio",
+    )
+      .nullable()
+      .optional(),
   })
   .strict()
   .openapi("ApiMemberProfileUpdateInput");
@@ -1687,7 +1725,7 @@ export const ApiRecordViewBodySchema = z
     }),
     resourceId: z
       .string()
-      .uuid()
+      .max(128)
       .optional()
       .openapi({
         description: "조회수를 기록할 리소스 UUID (home인 경우 생략 가능)",
@@ -1695,6 +1733,19 @@ export const ApiRecordViewBodySchema = z
       }),
   })
   .strict()
+  .superRefine((value, ctx) => {
+    if (
+      (value.resourceType === "activity" ||
+        value.resourceType === "exhibition") &&
+      !z.string().uuid().safeParse(value.resourceId).success
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["resourceId"],
+        message: "activity/exhibition 조회에는 유효한 리소스 UUID가 필요합니다.",
+      });
+    }
+  })
   .openapi("ApiRecordViewBody");
 
 export const ApiViewCountsQuerySchema = z
@@ -1888,10 +1939,22 @@ export const ApiRecordPageViewRequestSchema = z
       description: "페이지 타입",
       example: "activity",
     }),
-    resourceId: z.string().optional().openapi({
+    resourceId: z.string().max(128).optional().openapi({
       description: "리소스 ID (activity/exhibition/notice의 경우)",
-      example: "abc123",
+      example: EXAMPLE_ID,
     }),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      (value.pageType === "activity" || value.pageType === "exhibition") &&
+      !z.string().uuid().safeParse(value.resourceId).success
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["resourceId"],
+        message: "activity/exhibition 방문에는 유효한 리소스 UUID가 필요합니다.",
+      });
+    }
   })
   .openapi("ApiRecordPageViewRequest");
 

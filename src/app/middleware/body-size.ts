@@ -5,6 +5,11 @@ import { AppError } from "../../shared/errors/AppError";
 const DEFAULT_MAX_BODY_BYTES = 5 * 1024 * 1024;
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
 
+const payloadTooLargeError = (maxBytes: number): AppError =>
+  AppError.payloadTooLarge(
+    `요청 본문이 허용된 최대 크기(${maxBytes} bytes)를 초과했습니다.`,
+  );
+
 const readContentLength = (request: Request): number | null => {
   const header = request.headers.get("content-length");
   if (!header) {
@@ -24,11 +29,44 @@ export const createMaxBodySizeMiddleware = (
       return;
     }
 
-    const contentLength = readContentLength(c.req.raw);
+    const request = c.req.raw;
+    const contentLength = readContentLength(request);
     if (contentLength !== null && contentLength > maxBytes) {
-      throw AppError.payloadTooLarge(
-        `요청 본문이 허용된 최대 크기(${maxBytes} bytes)를 초과했습니다.`,
-      );
+      await request.body?.cancel().catch(() => undefined);
+      throw payloadTooLargeError(maxBytes);
+    }
+
+    if (!request.body) {
+      await next();
+      return;
+    }
+
+    // Request.clone() tees the stream. Reading the clone lets us count the
+    // actual bytes while leaving both c.req.raw and Hono's body helpers intact
+    // for downstream handlers. The accepted branch is bounded by maxBytes.
+    const reader = request.clone().body!.getReader();
+    let receivedBytes = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        receivedBytes += value.byteLength;
+        if (receivedBytes > maxBytes) {
+          // Cancel both tee branches concurrently. Waiting for only one branch
+          // first can leave the tee cancellation promise unresolved.
+          await Promise.allSettled([
+            reader.cancel(),
+            request.body.cancel(),
+          ]);
+          throw payloadTooLargeError(maxBytes);
+        }
+      }
+    } finally {
+      reader.releaseLock();
     }
 
     await next();

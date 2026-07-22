@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { can, normalizeRole } from "../lib/authorization/policy";
+import {
+  can,
+  isManagerLikeRole,
+  normalizeRole,
+} from "../lib/authorization/policy";
 
 describe("authorization policy", /** describe 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => {
   it("제거된 user role 문자열은 unverified로 정규화한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => {
@@ -41,6 +45,14 @@ describe("authorization policy", /** describe 실행 과정에서 필요한 연�
 
   it("정회원은 user 일반 조회 권한이 있다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => {
     expect(can("regular_member", "user", "read")).toBe(true);
+  });
+
+  it("manager 이상 역할만 manager 계열로 판별한다", () => {
+    expect(isManagerLikeRole("manager")).toBe(true);
+    expect(isManagerLikeRole("vice_president")).toBe(true);
+    expect(isManagerLikeRole("president")).toBe(true);
+    expect(isManagerLikeRole("regular_member")).toBe(false);
+    expect(isManagerLikeRole("unverified")).toBe(false);
   });
 
   it("member 계열 role은 동일 권한을 가진다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => {

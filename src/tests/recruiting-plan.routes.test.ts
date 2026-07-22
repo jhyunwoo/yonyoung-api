@@ -10,6 +10,9 @@ import {
   readJson,
 } from "./test-helpers";
 
+const LEGACY_RECRUITING_RICH_TEXT =
+  '<h2>모집 안내</h2><p>정상 본문</p><a href="https://apply.example" data-validation-marker="present">지원하기</a>';
+
 describe("recruiting plan routes", () => {
   it("미로그인 사용자는 모집 계획 조회 시 401을 반환한다", async () => {
     const getCurrentRecruitingPlan = fn(async () => createRecruitingPlan());
@@ -73,6 +76,25 @@ describe("recruiting plan routes", () => {
     expect(body.data.year).toBe(2031);
     expect(body.data.title).toBe("2031 모집 계획");
     expect(getCurrentRecruitingPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it("인증 모집 계획 조회 시 레거시 리치텍스트 속성을 제거한다", async () => {
+    const getCurrentRecruitingPlan = fn(async () =>
+      createRecruitingPlan({ content: LEGACY_RECRUITING_RICH_TEXT }),
+    );
+    const app = createTestApp({
+      actor: createActor("president", IDs.president),
+      dataService: createDataServiceMock({ getCurrentRecruitingPlan }),
+    });
+
+    const response = await app.request("/api/recruiting-plan/current");
+
+    expect(response.status).toBe(200);
+    const body = await readJson<{ data: { content: string } }>(response);
+    expect(body.data.content).toContain("<h2>모집 안내</h2>");
+    expect(body.data.content).toContain("<p>정상 본문</p>");
+    expect(body.data.content).toContain('href="https://apply.example"');
+    expect(body.data.content).not.toContain("data-validation-marker");
   });
 
   it("부회장은 현재 연도 모집 계획을 조회할 수 있다", async () => {
@@ -292,7 +314,7 @@ describe("recruiting plan routes", () => {
     const upsertCurrentRecruitingPlan = fn(async () =>
       createRecruitingPlan({
         title: "2030 모집 계획",
-        content: "<p>지원해주세요.</p>",
+        content: LEGACY_RECRUITING_RICH_TEXT,
       }),
     );
     const app = createTestApp({
@@ -313,8 +335,14 @@ describe("recruiting plan routes", () => {
     });
 
     expect(response.status).toBe(200);
-    const body = await readJson<{ data: { title: string } }>(response);
+    const body = await readJson<{
+      data: { title: string; content: string };
+    }>(response);
     expect(body.data.title).toBe("2030 모집 계획");
+    expect(body.data.content).toContain("<h2>모집 안내</h2>");
+    expect(body.data.content).toContain("<p>정상 본문</p>");
+    expect(body.data.content).toContain('href="https://apply.example"');
+    expect(body.data.content).not.toContain("data-validation-marker");
     expect(upsertCurrentRecruitingPlan).toHaveBeenCalledWith({
       title: "2030 모집 계획",
       content: "<p>지원해주세요.</p>",

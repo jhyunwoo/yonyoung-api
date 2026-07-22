@@ -43,6 +43,20 @@
       "when": 1783560976127,
       "tag": "0005_cooing_salo",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784700260765,
+      "tag": "0006_glossy_doctor_octopus",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1784713356813,
+      "tag": "0007_smiling_silk_fever",
+      "breakpoints": true
     }
   ]
 }

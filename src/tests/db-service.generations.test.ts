@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { activities, exhibitions, generations } from "../lib/db/schema";
+import type { SQL } from "drizzle-orm";
+import { SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
+import { generations } from "../lib/db/schema";
 
 const createDBMock = vi.hoisted(() => vi.fn());
 
@@ -10,7 +12,7 @@ vi.mock("../lib/db", () => ({
 import { createDbDataService } from "../lib/services/db-service";
 
 const createMockDb = () => {
-  const findMany = vi.fn(async () => [] as Array<{ id: string }>);
+  const findFirst = vi.fn(async () => undefined as { id: string } | undefined);
   const insertValues = vi.fn(async () => undefined);
   const insert = vi.fn(() => ({ values: insertValues }));
   const deleteWhere = vi.fn(async () => undefined);
@@ -20,13 +22,13 @@ const createMockDb = () => {
     db: {
       query: {
         generations: {
-          findMany,
+          findFirst,
         },
       },
       insert,
       delete: remove,
     },
-    findMany,
+    findFirst,
     insert,
     insertValues,
     remove,
@@ -39,50 +41,35 @@ describe("db service generations create", () => {
     createDBMock.mockReset();
   });
 
-  it("같은 이름 기수가 있으면 기존 데이터 삭제 후 새로 생성한다", async () => {
+  it("활성 상태의 같은 이름 기수는 기존 데이터를 삭제하지 않고 충돌로 거부한다", async () => {
     const mockDb = createMockDb();
-    mockDb.findMany.mockResolvedValueOnce([{ id: "old-generation-id" }]);
+    mockDb.findFirst.mockResolvedValueOnce({ id: "active-generation-id" });
     createDBMock.mockReturnValue(mockDb.db as never);
 
     const service = createDbDataService({} as D1Database);
-    const getGenerationById = vi.fn(async () => ({
-      id: "new-generation-id",
-      name: "60기",
-      sortOrder: 60,
-      startDate: new Date("2030-01-01T00:00:00.000Z"),
-      endDate: new Date("2030-12-31T00:00:00.000Z"),
-      createdAt: new Date("2030-01-01T00:00:00.000Z"),
-      updatedAt: new Date("2030-01-01T00:00:00.000Z"),
-      updatedBy: null,
-    }));
-    Object.assign(service, { getGenerationById });
     vi.spyOn(crypto, "randomUUID").mockReturnValue("new-generation-id");
 
-    const result = await service.createGeneration({
-      name: " 60기 ",
-      sortOrder: 60,
-      startDate: Date.parse("2030-01-01T00:00:00.000Z"),
-      endDate: Date.parse("2030-12-31T00:00:00.000Z"),
-    });
+    await expect(
+      service.createGeneration({
+        name: " 60기 ",
+        sortOrder: 60,
+        startDate: Date.parse("2030-01-01T00:00:00.000Z"),
+        endDate: Date.parse("2030-12-31T00:00:00.000Z"),
+      }),
+    ).rejects.toThrow("UNIQUE constraint failed: generations.name");
 
-    expect(mockDb.remove).toHaveBeenNthCalledWith(1, activities);
-    expect(mockDb.remove).toHaveBeenNthCalledWith(2, exhibitions);
-    expect(mockDb.remove).toHaveBeenNthCalledWith(3, generations);
-    expect(mockDb.insert).toHaveBeenCalledWith(generations);
-    expect(mockDb.insertValues).toHaveBeenCalledWith({
-      id: "new-generation-id",
-      name: "60기",
-      sortOrder: 60,
-      startDate: new Date("2030-01-01T00:00:00.000Z"),
-      endDate: new Date("2030-12-31T00:00:00.000Z"),
-    });
-    expect(getGenerationById).toHaveBeenCalledWith("new-generation-id");
-    expect(result.id).toBe("new-generation-id");
+    const findOptions = (mockDb.findFirst.mock.calls as unknown[][])[0]?.[0] as {
+      where: SQL;
+    };
+    const query = new SQLiteSyncDialect().sqlToQuery(findOptions.where);
+    expect(query.sql).toContain('"generations"."deleted_at" is null');
+    expect(mockDb.remove).not.toHaveBeenCalled();
+    expect(mockDb.insert).not.toHaveBeenCalled();
   });
 
-  it("같은 이름 기수가 없으면 기존 데이터 삭제 없이 생성한다", async () => {
+  it("동일 이름의 soft-deleted archive는 보존하고 새 활성 기수를 생성한다", async () => {
     const mockDb = createMockDb();
-    mockDb.findMany.mockResolvedValueOnce([]);
+    mockDb.findFirst.mockResolvedValueOnce(undefined);
     createDBMock.mockReturnValue(mockDb.db as never);
 
     const service = createDbDataService({} as D1Database);
@@ -109,5 +96,12 @@ describe("db service generations create", () => {
 
     expect(mockDb.remove).not.toHaveBeenCalled();
     expect(mockDb.insert).toHaveBeenCalledWith(generations);
+    expect(mockDb.insertValues).toHaveBeenCalledWith({
+      id: "new-generation-id",
+      name: "61기",
+      sortOrder: 61,
+      startDate: new Date("2031-01-01T00:00:00.000Z"),
+      endDate: new Date("2031-12-31T00:00:00.000Z"),
+    });
   });
 });

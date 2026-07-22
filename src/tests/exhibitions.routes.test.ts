@@ -202,7 +202,7 @@ describe("exhibition routes", /** describe 실행 과정에서 필요한 연산�
       place: "갤러리",
       coverImageUrl: "https://example.com/exhibition-cover.jpg",
       description:
-        '<h2>섹션</h2><script>alert(1)</script><p onclick="evil()">본문</p><a href="javascript:alert(1)">bad</a>',
+        '<h2>섹션</h2><script>alert(1)</script><p onclick="evil()">본문</p><a href="javascript:alert(1)">bad</a><a href=\'https://example.com" data-validation-marker="present\'>safe</a>',
     };
 
     const response = await app.request("/api/exhibitions", {
@@ -219,6 +219,10 @@ describe("exhibition routes", /** describe 실행 과정에서 필요한 연산�
     expect(description).not.toContain("<script");
     expect(description).not.toContain("onclick=");
     expect(description).not.toContain("javascript:");
+    expect(description).toContain(
+      'href="https://example.com&quot; data-validation-marker=&quot;present"',
+    );
+    expect(description).not.toContain('data-validation-marker="present"');
     expect(createExhibitionMock).toHaveBeenCalledWith({
       ...payload,
       description,

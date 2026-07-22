@@ -100,7 +100,7 @@ describe("activity routes", /** describe 실행 과정에서 필요한 연산을
       body: JSON.stringify({
         title: "sanitize-test",
         description:
-          '<h2>섹션</h2><script>alert(1)</script><p onclick="evil()">본문</p><a href="javascript:alert(1)">bad</a>',
+          '<h2>섹션</h2><script>alert(1)</script><p onclick="evil()">본문</p><a href="javascript:alert(1)">bad</a><a href=\'https://example.com" data-validation-marker="present\'>safe</a>',
         startDate: Date.parse("2030-03-01T00:00:00.000Z"),
         endDate: Date.parse("2030-03-03T00:00:00.000Z"),
         coverImageUrl: "https://example.com/cover.jpg",
@@ -116,6 +116,10 @@ describe("activity routes", /** describe 실행 과정에서 필요한 연산을
     expect(description).not.toContain("<script");
     expect(description).not.toContain("onclick=");
     expect(description).not.toContain("javascript:");
+    expect(description).toContain(
+      'href="https://example.com&quot; data-validation-marker=&quot;present"',
+    );
+    expect(description).not.toContain('data-validation-marker="present"');
     expect(createActivityMock).toHaveBeenCalledWith(
       expect.objectContaining({ description }),
     );

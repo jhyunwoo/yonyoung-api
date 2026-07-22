@@ -1,6 +1,7 @@
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { openAPI } from "better-auth/plugins";
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import * as schema from "./db/schema";
 import createDB from "./db";
 import type { AppBindings } from "../types/honoAppType";
@@ -8,8 +9,33 @@ import {
   resolveAuthRuntimeEnv,
   type AuthRuntimeEnv,
 } from "./config/runtime-env";
+import { isHttpUrl } from "./validation/url";
 
 const LOCAL_HOSTNAME = "localhost";
+
+const assertSafePublicUserUrls = (user: unknown): void => {
+  if (!user || typeof user !== "object") {
+    return;
+  }
+
+  const fields = user as {
+    image?: unknown;
+    personalLink?: unknown;
+  };
+  for (const [fieldName, value] of [
+    ["image", fields.image],
+    ["personalLink", fields.personalLink],
+  ] as const) {
+    if (value === undefined || value === null) {
+      continue;
+    }
+    if (typeof value !== "string" || !isHttpUrl(value)) {
+      throw new APIError("BAD_REQUEST", {
+        message: `${fieldName}은 http(s) URL만 사용할 수 있습니다.`,
+      });
+    }
+  }
+};
 
 const isIpHostname = (hostname: string): boolean => {
   return /^[0-9.]+$/.test(hostname) || hostname.includes(":");
@@ -148,6 +174,20 @@ const createAuthWithEnv = (database: D1Database, env: AuthRuntimeEnv) => {
       provider: "sqlite",
       schema,
     }),
+    databaseHooks: {
+      user: {
+        create: {
+          before: async (user) => {
+            assertSafePublicUserUrls(user);
+          },
+        },
+        update: {
+          before: async (user) => {
+            assertSafePublicUserUrls(user);
+          },
+        },
+      },
+    },
     socialProviders: {
       google: {
         clientId: env.googleClientId,

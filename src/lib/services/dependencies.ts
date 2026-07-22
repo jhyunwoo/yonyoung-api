@@ -18,6 +18,14 @@ import {
   createD1ViewCountStore,
   type ViewCountStore,
 } from "../views/view-counts";
+import {
+  createD1MultipartUploadStateStore,
+  type MultipartUploadStateStore,
+} from "../uploads/multipart-state";
+import {
+  createD1UploadReservationStore,
+  type UploadReservationStore,
+} from "../uploads/upload-reservation";
 
 export type ResolveActor = (
   c: Context<HonoAppType>,
@@ -37,6 +45,10 @@ export type GetAuthOpenApiSchema = (
 
 export type IsDocsEnabled = (c: Context<HonoAppType>) => boolean;
 
+export type AllowPageViewWrite = (
+  c: Context<HonoAppType>,
+) => Promise<boolean>;
+
 export type AppDependencies = {
   resolveActor: ResolveActor;
   getDataService: GetDataService;
@@ -45,6 +57,13 @@ export type AppDependencies = {
   getAuthOpenApiSchema: GetAuthOpenApiSchema;
   isDocsEnabled: IsDocsEnabled;
   getViewCountStore: (c: Context<HonoAppType>) => ViewCountStore;
+  allowPageViewWrite: AllowPageViewWrite;
+  getMultipartUploadStateStore: (
+    c: Context<HonoAppType>,
+  ) => MultipartUploadStateStore;
+  getUploadReservationStore: (
+    c: Context<HonoAppType>,
+  ) => UploadReservationStore;
 };
 
 const createRequestDatabase = (c: Context<HonoAppType>) => {
@@ -81,6 +100,28 @@ export const createDefaultDependencies = (): AppDependencies => ({
   getPresignService: (c) => createR2PresignService(c.env),
   readR2TotalUsageBytes: (c) => readR2TotalUsageBytes(resolveR2Bucket(c.env)),
   getViewCountStore: (c) => createD1ViewCountStore(createRequestDatabase(c)),
+  allowPageViewWrite: async (c) => {
+    const limiter = c.env.PAGE_VIEW_RATE_LIMITER;
+    if (!limiter) {
+      // Analytics writes are optional. Missing production admission control
+      // must fail closed while preserving the public endpoint response shape.
+      return false;
+    }
+
+    const clientKey = c.req.header("cf-connecting-ip")?.trim() || "unknown";
+    try {
+      const result = await limiter.limit({
+        key: `anonymous-page-view:${clientKey}`,
+      });
+      return result.success;
+    } catch {
+      return false;
+    }
+  },
+  getMultipartUploadStateStore: (c) =>
+    createD1MultipartUploadStateStore(createRequestDatabase(c)),
+  getUploadReservationStore: (c) =>
+    createD1UploadReservationStore(createRequestDatabase(c)),
   getAuthOpenApiSchema: async (c) => {
     const database = resolveD1Database(c.env);
     const auth = createAuth(database, c.env);

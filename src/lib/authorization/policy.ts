@@ -70,6 +70,11 @@ export const isMemberLikeRole = (role: Role): boolean => {
   return isMemberLikeRoleValue(role);
 };
 
+/** 관리자, 부회장, 회장 역할인지 확인한다. */
+export const isManagerLikeRole = (role: Role): boolean => {
+  return roleLevel[role] >= roleLevel.manager;
+};
+
 const permissionMatrix: PermissionMatrix = {
   president: {
     generation: { ...allTrue },

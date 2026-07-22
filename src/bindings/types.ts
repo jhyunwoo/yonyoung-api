@@ -1,12 +1,13 @@
 import type { Actor } from "../lib/authorization/types";
 import type { DataService } from "../lib/services/types";
 
-export type Bindings = CloudflareBindings & {
+type RuntimeBindingOverrides = {
   DB?: D1Database;
   db?: D1Database;
   R2?: R2Bucket;
   r2?: R2Bucket;
   PERF_ANALYTICS?: AnalyticsEngineDataset;
+  PAGE_VIEW_RATE_LIMITER?: RateLimit;
   BETTER_AUTH_URL?: string;
   BETTER_AUTH_TRUSTED_ORIGINS?: string;
   BETTER_AUTH_SECRET?: string;
@@ -19,6 +20,7 @@ export type Bindings = CloudflareBindings & {
   R2_BUCKET?: string;
   R2_PUBLIC_BASE_URL?: string;
   R2_PUBLIC_URL_SIGNING_SECRET?: string;
+  R2_PUBLIC_URL_SIGNING_SECRET_PREVIOUS?: string;
   DOCS_ENABLED?: string;
   DOCS_AUTH_IN_PROD?: string;
   D1_SESSION_CONSISTENCY?: string;
@@ -30,6 +32,15 @@ export type Bindings = CloudflareBindings & {
   PERF_ANALYTICS_SAMPLE_RATE?: string;
   CSP_REPORT_ONLY?: string;
 };
+
+// Wrangler emits literal string types for vars declared in wrangler.jsonc.
+// Runtime/test overrides legitimately use other validated values, so replace
+// those generated keys instead of intersecting them with their literals.
+export type Bindings = Omit<
+  CloudflareBindings,
+  keyof RuntimeBindingOverrides
+> &
+  RuntimeBindingOverrides;
 
 export type AppVariables = {
   actor: Actor | null;

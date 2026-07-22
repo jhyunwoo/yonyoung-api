@@ -6,7 +6,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "yonyoung-api",
   "main": "src/index.ts",
-  "compatibility_date": "2025-09-27",
+  "compatibility_date": "2026-07-15",
   "assets": {
     "binding": "ASSETS",
     "directory": "./public"
@@ -42,9 +42,19 @@
       "dataset": "yonyoung_api_perf"
     }
   ],
+  "ratelimits": [
+    {
+      "name": "PAGE_VIEW_RATE_LIMITER",
+      "namespace_id": "817941615",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    }
+  ],
   "vars": {
     "BETTER_AUTH_URL": "https://yonyoung.yonsei.ac.kr",
-    "BETTER_AUTH_TRUSTED_ORIGINS": "https://yonyoung.yonsei.ac.kr,https://dev.yonyoung.moveto.kr",
+    "BETTER_AUTH_TRUSTED_ORIGINS": "https://yonyoung.yonsei.ac.kr",
     "R2_PUBLIC_BASE_URL": "https://storage.yonyoung.moveto.kr",
     "R2_BUCKET": "yonyoung-storage",
     "DOCS_ENABLED": "false",
@@ -94,6 +104,16 @@
         {
           "binding": "PERF_ANALYTICS",
           "dataset": "yonyoung_api_perf"
+        }
+      ],
+      "ratelimits": [
+        {
+          "name": "PAGE_VIEW_RATE_LIMITER",
+          "namespace_id": "817941616",
+          "simple": {
+            "limit": 30,
+            "period": 60
+          }
         }
       ]
     }

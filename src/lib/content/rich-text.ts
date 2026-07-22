@@ -1,4 +1,4 @@
-import { FilterXSS } from "xss";
+import { FilterXSS, escapeAttrValue } from "xss";
 
 const ALLOWED_TAGS = [
   "h2",
@@ -60,7 +60,7 @@ const sanitizeFilter = new FilterXSS({
   css: false,
   safeAttrValue(tag, name, value) {
     if (tag === "a" && name === "href") {
-      return isAllowedLink(value) ? trim(value) : "";
+      return isAllowedLink(value) ? escapeAttrValue(trim(value)) : "";
     }
 
     if (tag === "a" && name === "target") {

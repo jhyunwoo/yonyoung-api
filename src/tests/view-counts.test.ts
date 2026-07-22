@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { createApp } from "../app";
 import {
   createD1ViewCountStore,
   createNoopViewCountStore,
@@ -165,7 +164,13 @@ describe("isValidViewResourceType", () => {
 describe("POST /api/public/views", () => {
   it("정상 요청 시 D1에 조회수를 기록하고 204를 반환한다", async () => {
     const database = createViewCountD1Database();
-    const app = createApp();
+    const app = createTestApp({
+      actor: null,
+      dataService: createDataServiceMock({
+        recordPageView: async () => undefined,
+      }),
+      viewCountStore: createD1ViewCountStore(database),
+    });
 
     const firstResponse = await app.request(
       "/api/public/views",
@@ -177,7 +182,6 @@ describe("POST /api/public/views", () => {
           resourceId: IDs.activity,
         }),
       },
-      { db: database },
     );
     const secondResponse = await app.request(
       "/api/public/views",
@@ -189,7 +193,6 @@ describe("POST /api/public/views", () => {
           resourceId: IDs.activity,
         }),
       },
-      { db: database },
     );
 
     expect(firstResponse.status).toBe(204);
@@ -290,6 +293,79 @@ describe("POST /api/public/views", () => {
     expect(response.status).toBe(204);
     expect(recordView).toHaveBeenCalledTimes(1);
   });
+
+  it("존재하지 않거나 삭제된 리소스는 두 저장소 모두 갱신하지 않는다", async () => {
+    const recordView = vi.fn(async () => undefined);
+    const recordPageView = vi.fn(async () => undefined);
+    const app = createTestApp({
+      actor: null,
+      dataService: createDataServiceMock({
+        isActiveViewResource: async () => false,
+        recordPageView,
+      }),
+      viewCountStore: {
+        recordView,
+        getViewCounts: async () => ({}),
+      },
+    });
+
+    const response = await app.request("/api/public/views", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        resourceType: "activity",
+        resourceId: IDs.otherUuid,
+      }),
+    });
+
+    expect(response.status).toBe(204);
+    expect(recordView).not.toHaveBeenCalled();
+    expect(recordPageView).not.toHaveBeenCalled();
+  });
+
+  it("activity/exhibition 요청에서 resourceId 누락을 거부한다", async () => {
+    const app = createTestApp({
+      actor: null,
+      dataService: createDataServiceMock(),
+    });
+
+    const response = await app.request("/api/public/views", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resourceType: "activity" }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rate limit을 초과하면 204를 유지하고 두 저장소 모두 갱신하지 않는다", async () => {
+    const recordView = vi.fn(async () => undefined);
+    const recordPageView = vi.fn(async () => undefined);
+    const isActiveViewResource = vi.fn(async () => true);
+    const app = createTestApp({
+      actor: null,
+      allowPageViewWrite: async () => false,
+      dataService: createDataServiceMock({
+        isActiveViewResource,
+        recordPageView,
+      }),
+      viewCountStore: {
+        recordView,
+        getViewCounts: async () => ({}),
+      },
+    });
+
+    const response = await app.request("/api/public/views", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resourceType: "home" }),
+    });
+
+    expect(response.status).toBe(204);
+    expect(isActiveViewResource).not.toHaveBeenCalled();
+    expect(recordView).not.toHaveBeenCalled();
+    expect(recordPageView).not.toHaveBeenCalled();
+  });
 });
 
 describe("GET /api/public/views", () => {
@@ -319,7 +395,13 @@ describe("GET /api/public/views", () => {
 
   it("POST로 기록한 값을 GET에서 즉시 조회한다", async () => {
     const database = createViewCountD1Database();
-    const app = createApp();
+    const app = createTestApp({
+      actor: null,
+      dataService: createDataServiceMock({
+        recordPageView: async () => undefined,
+      }),
+      viewCountStore: createD1ViewCountStore(database),
+    });
 
     await app.request(
       "/api/public/views",
@@ -331,13 +413,11 @@ describe("GET /api/public/views", () => {
           resourceId: IDs.activity,
         }),
       },
-      { db: database },
     );
 
     const response = await app.request(
       `/api/public/views?resourceType=activity&resourceIds=${IDs.activity},${IDs.otherUuid}`,
       undefined,
-      { db: database },
     );
 
     expect(response.status).toBe(200);
@@ -376,6 +456,33 @@ describe("GET /api/public/views", () => {
       IDs.exhibition,
     ]);
   });
+
+  it.each(["home", "notice"] as const)(
+    "%s singleton 조회는 canonical 카운트를 요청 키에 매핑한다",
+    async (resourceType) => {
+      const getViewCounts = vi.fn(async () => ({ [resourceType]: 17 }));
+      const app = createTestApp({
+        actor: null,
+        dataService: createDataServiceMock(),
+        viewCountStore: {
+          recordView: async () => undefined,
+          getViewCounts,
+        },
+      });
+
+      const response = await app.request(
+        `/api/public/views?resourceType=${resourceType}&resourceIds=legacy-key,another-key`,
+      );
+
+      expect(response.status).toBe(200);
+      const body = await readJson<{ data: Record<string, number> }>(response);
+      expect(body.data).toEqual({
+        "legacy-key": 17,
+        "another-key": 17,
+      });
+      expect(getViewCounts).toHaveBeenCalledWith(resourceType, [resourceType]);
+    },
+  );
 
   it("resourceType 파라미터가 없으면 400을 반환한다", async () => {
     const app = createTestApp({

@@ -14,6 +14,7 @@ import {
 	pageViews,
 	recruitingPlans,
 	siteSettings,
+	session,
 	user,
 	userGenerations,
 } from "../db/schema";
@@ -35,6 +36,13 @@ import {
 	UserResourceHistoryItemEntity,
 	UserResourceHistoryResourceType,
 } from "./types";
+import { normalizePageViewResourceId } from "../views/page-view-target";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+const toKstDailyBucketStart = (timestamp: number): number =>
+	Math.floor((timestamp + KST_OFFSET_MS) / DAY_MS) * DAY_MS - KST_OFFSET_MS;
 
 const isMissingUserGenerationsTableError = (error: unknown): boolean => {
 	if (!(error instanceof Error)) {
@@ -862,9 +870,12 @@ const toRecruitingPlanEntity = (
  */
 export const createDbDataService = (database: D1Database): DataService => {
 	const db = createDB(database);
-	const findGenerationsByName = async (name: string) => {
-		return db.query.generations.findMany({
-			where: eq(generations.name, name),
+	const findActiveGenerationByName = async (name: string) => {
+		return db.query.generations.findFirst({
+			where: and(
+				eq(generations.name, name),
+				isNull(generations.deletedAt),
+			),
 		});
 	};
 
@@ -875,16 +886,6 @@ export const createDbDataService = (database: D1Database): DataService => {
 			where: and(eq(attachments.id, id), isNull(attachments.deletedAt)),
 		});
 		return row ? toAttachmentEntity(row) : null;
-	};
-
-	const purgeGeneration = async (generationId: string) => {
-		await db
-			.delete(activities)
-			.where(eq(activities.generationId, generationId));
-		await db
-			.delete(exhibitions)
-			.where(eq(exhibitions.generationId, generationId));
-		await db.delete(generations).where(eq(generations.id, generationId));
 	};
 
 	return {
@@ -994,10 +995,10 @@ export const createDbDataService = (database: D1Database): DataService => {
 		async createGeneration(input) {
 			const id = crypto.randomUUID();
 			const generationName = input.name.trim();
-			const existingGenerationsWithSameName =
-				await findGenerationsByName(generationName);
-			for (const existingGeneration of existingGenerationsWithSameName) {
-				await purgeGeneration(existingGeneration.id);
+			const existingGenerationWithSameName =
+				await findActiveGenerationByName(generationName);
+			if (existingGenerationWithSameName) {
+				throw new Error("UNIQUE constraint failed: generations.name");
 			}
 
 			await db.insert(generations).values({
@@ -2381,6 +2382,15 @@ export const createDbDataService = (database: D1Database): DataService => {
 				return [];
 			}
 
+			// Enforce lifecycle scope at the data-service boundary as well as during
+			// Actor reconstruction. This keeps a future caller from reviving a legacy
+			// user.generationId that points at a soft-deleted generation.
+			const { generationIds: activeGenerationIds } =
+				await selectActiveGenerationIds(db, normalizedGenerationIds);
+			if (activeGenerationIds.length === 0) {
+				return [];
+			}
+
 			const readLegacyUserIds = async (): Promise<string[]> => {
 				const legacyRows = await db
 					.select({
@@ -2389,7 +2399,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 					.from(user)
 					.where(
 						and(
-							inArray(user.generationId, normalizedGenerationIds),
+							inArray(user.generationId, activeGenerationIds),
 							isNull(user.deletedAt),
 						),
 					)
@@ -2411,7 +2421,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 						)
 						.where(
 							and(
-								inArray(userGenerations.generationId, normalizedGenerationIds),
+								inArray(userGenerations.generationId, activeGenerationIds),
 								isNull(user.deletedAt),
 								isNull(generations.deletedAt),
 							),
@@ -2760,15 +2770,23 @@ export const createDbDataService = (database: D1Database): DataService => {
 				return [];
 			}
 
-			for (const targetUserId of targetUserIds) {
-				await db
+			// D1 batches are transactional. Chunking stays below D1's binding limit,
+			// while the last-president trigger can still abort every target together.
+			const [firstChunk, ...remainingChunks] = chunkArray(targetUserIds);
+			const updatedAt = new Date();
+			const buildRoleUpdate = (chunk: string[]) =>
+				db
 					.update(user)
 					.set({
 						role: input.role,
-						updatedAt: new Date(),
+						updatedAt,
 					})
-					.where(and(eq(user.id, targetUserId), isNull(user.deletedAt)));
-			}
+					.where(and(inArray(user.id, chunk), isNull(user.deletedAt)));
+
+			await db.batch([
+				buildRoleUpdate(firstChunk),
+				...remainingChunks.map(buildRoleUpdate),
+			]);
 
 			const rows = await selectInChunks(targetUserIds, (chunk) =>
 				db
@@ -2922,19 +2940,60 @@ export const createDbDataService = (database: D1Database): DataService => {
 				linktreeLinksTotal: linktreeLinksCountRows[0]?.value ?? 0,
 			};
 		},
+		async isActiveViewResource(pageType, resourceId) {
+			if (pageType === "home" || pageType === "notice") {
+				return true;
+			}
+			if (!resourceId) {
+				return false;
+			}
+
+			if (pageType === "activity") {
+				const rows = await db
+					.select({ id: activities.id })
+					.from(activities)
+					.where(
+						and(eq(activities.id, resourceId), isNull(activities.deletedAt)),
+					)
+					.limit(1);
+				return rows.length > 0;
+			}
+
+			const rows = await db
+				.select({ id: exhibitions.id })
+				.from(exhibitions)
+				.where(
+					and(eq(exhibitions.id, resourceId), isNull(exhibitions.deletedAt)),
+				)
+				.limit(1);
+			return rows.length > 0;
+		},
 		/**
-		 * recordPageView 페이지 방문 기록을 page_views 테이블에 추가합니다.
-		 * @param pageType 'home' | 'activity' | 'exhibition' | 'notice'
-		 * @param resourceId 리소스 ID (홈인 경우 undefined)
-		 * @returns 처리 결과를 Promise로 반환합니다.
-		 * @remarks fire-and-forget 방식으로 호출자가 에러를 무시할 수 있도록 가벼운 단일 INSERT만 수행합니다.
+		 * KST 일자와 리소스별로 한 행만 유지하고 조회수를 원자적으로 누적합니다.
 		 */
 		async recordPageView(pageType, resourceId) {
-			await db.insert(pageViews).values({
-				id: crypto.randomUUID(),
+			const normalizedResourceId = normalizePageViewResourceId(
 				pageType,
-				resourceId: resourceId ?? null,
-			});
+				resourceId,
+			);
+			const bucketStart = toKstDailyBucketStart(Date.now());
+			const bucketId = `daily:${pageType}:${normalizedResourceId}:${bucketStart}`;
+
+			await db
+				.insert(pageViews)
+				.values({
+					id: bucketId,
+					pageType,
+					resourceId: normalizedResourceId,
+					viewCount: 1,
+					visitedAt: new Date(bucketStart),
+				})
+				.onConflictDoUpdate({
+					target: pageViews.id,
+					set: {
+						viewCount: sql`${pageViews.viewCount} + 1`,
+					},
+				});
 		},
 		/**
 		 * getPageViewStats 방문 통계를 집계해 반환합니다.
@@ -2945,7 +3004,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 			const countsByType = await db
 				.select({
 					pageType: pageViews.pageType,
-					count: sql<number>`count(*)`,
+					count: sql<number>`coalesce(sum(${pageViews.viewCount}), 0)`,
 				})
 				.from(pageViews)
 				.groupBy(pageViews.pageType);
@@ -2971,36 +3030,40 @@ export const createDbDataService = (database: D1Database): DataService => {
 			const topActivitiesRows = await db
 				.select({
 					resourceId: pageViews.resourceId,
-					count: sql<number>`count(*)`,
+					count: sql<number>`coalesce(sum(${pageViews.viewCount}), 0)`,
 				})
 				.from(pageViews)
 				.where(eq(pageViews.pageType, "activity"))
 				.groupBy(pageViews.resourceId)
-				.orderBy(sql`count(*) desc`)
+				.orderBy(sql`sum(${pageViews.viewCount}) desc`)
 				.limit(10);
 
 			const topExhibitionsRows = await db
 				.select({
 					resourceId: pageViews.resourceId,
-					count: sql<number>`count(*)`,
+					count: sql<number>`coalesce(sum(${pageViews.viewCount}), 0)`,
 				})
 				.from(pageViews)
 				.where(eq(pageViews.pageType, "exhibition"))
 				.groupBy(pageViews.resourceId)
-				.orderBy(sql`count(*) desc`)
+				.orderBy(sql`sum(${pageViews.viewCount}) desc`)
 				.limit(10);
 
 			const thirtyDaysAgo = new Date();
 			thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 			const dailyTrendRows = await db
 				.select({
-					date: sql<string>`date(${pageViews.visitedAt} / 1000, 'unixepoch')`,
-					count: sql<number>`count(*)`,
+					date: sql<string>`date((${pageViews.visitedAt} + ${KST_OFFSET_MS}) / 1000, 'unixepoch')`,
+					count: sql<number>`coalesce(sum(${pageViews.viewCount}), 0)`,
 				})
 				.from(pageViews)
 				.where(gte(pageViews.visitedAt, thirtyDaysAgo))
-				.groupBy(sql`date(${pageViews.visitedAt} / 1000, 'unixepoch')`)
-				.orderBy(sql`date(${pageViews.visitedAt} / 1000, 'unixepoch')`);
+				.groupBy(
+					sql`date((${pageViews.visitedAt} + ${KST_OFFSET_MS}) / 1000, 'unixepoch')`,
+				)
+				.orderBy(
+					sql`date((${pageViews.visitedAt} + ${KST_OFFSET_MS}) / 1000, 'unixepoch')`,
+				);
 
 			return {
 				totalViews,
@@ -3052,22 +3115,22 @@ export const createDbDataService = (database: D1Database): DataService => {
 
 			const [todayCount, yesterdayCount, thisWeekCount, lastWeekCount] = await Promise.all([
 				// Today
-				db.select({ count: sql<number>`count(*)` })
+					db.select({ count: sql<number>`coalesce(sum(${pageViews.viewCount}), 0)` })
 					.from(pageViews)
 					.where(and(gte(pageViews.visitedAt, startOfTodayUTC))),
 				// Yesterday
-				db.select({ count: sql<number>`count(*)` })
+					db.select({ count: sql<number>`coalesce(sum(${pageViews.viewCount}), 0)` })
 					.from(pageViews)
 					.where(and(
 						gte(pageViews.visitedAt, startOfYesterdayUTC),
 						lt(pageViews.visitedAt, startOfTodayUTC)
 					)),
 				// This Week
-				db.select({ count: sql<number>`count(*)` })
+					db.select({ count: sql<number>`coalesce(sum(${pageViews.viewCount}), 0)` })
 					.from(pageViews)
 					.where(and(gte(pageViews.visitedAt, startOfThisWeekUTC))),
 				// Last Week
-				db.select({ count: sql<number>`count(*)` })
+					db.select({ count: sql<number>`coalesce(sum(${pageViews.viewCount}), 0)` })
 					.from(pageViews)
 					.where(and(
 						gte(pageViews.visitedAt, startOfLastWeekUTC),
@@ -3080,7 +3143,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 				.select({
 					// visitedAt + 9시간을 하여 KST 날짜를 구함
 					date: sql<string>`date((${pageViews.visitedAt} + 32400000) / 1000, 'unixepoch')`,
-					count: sql<number>`count(*)`,
+					count: sql<number>`coalesce(sum(${pageViews.viewCount}), 0)`,
 				})
 				.from(pageViews)
 				.where(gte(pageViews.visitedAt, thirtyDaysAgo))
@@ -3109,20 +3172,20 @@ export const createDbDataService = (database: D1Database): DataService => {
 		 * @remarks 데이터 접근 시 입력값 검증과 트랜잭션/무결성 규칙을 함께 고려해야 합니다.
 		 */
 		async deleteUser(id) {
-			const exists = await db.query.user.findFirst({
-				where: and(eq(user.id, id), isNull(user.deletedAt)),
-			});
-			if (!exists) {
-				return false;
-			}
-			await db
-				.update(user)
-				.set({
-					deletedAt: new Date(),
-					updatedAt: new Date(),
-				})
-				.where(and(eq(user.id, id), isNull(user.deletedAt)));
-			return true;
+			const now = new Date();
+			const [updatedUsers] = await db.batch([
+				db
+					.update(user)
+					.set({
+						deletedAt: now,
+						updatedAt: now,
+					})
+					.where(and(eq(user.id, id), isNull(user.deletedAt)))
+					.returning({ id: user.id }),
+				db.delete(session).where(eq(session.userId, id)),
+			]);
+
+			return updatedUsers.length > 0;
 		},
 	};
 };

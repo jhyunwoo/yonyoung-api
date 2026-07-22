@@ -11,6 +11,10 @@ const SENSITIVE_HEADERS = new Set([
   "proxy-authorization",
 ]);
 
+type WaitUntilContext = {
+  waitUntil(promise: Promise<unknown>): void;
+};
+
 const redactHeaders = (headers: Headers): Record<string, string> => {
   const selected = [
     "user-agent",
@@ -35,8 +39,8 @@ const redactHeaders = (headers: Headers): Record<string, string> => {
 };
 
 const resolveExecutionContext = (
-  c: { executionCtx?: ExecutionContext },
-): ExecutionContext | undefined => {
+  c: { executionCtx?: WaitUntilContext },
+): WaitUntilContext | undefined => {
   try {
     return c.executionCtx;
   } catch {
@@ -45,7 +49,7 @@ const resolveExecutionContext = (
 };
 
 const enqueueLog = (
-  c: { executionCtx?: ExecutionContext },
+  c: { executionCtx?: WaitUntilContext },
   run: () => void,
 ): void => {
   const task = Promise.resolve().then(run);
@@ -196,7 +200,7 @@ export const logError = (
   c: {
     req: { method: string; path: string };
     get: (key: "requestId") => string;
-    executionCtx?: ExecutionContext;
+    executionCtx?: WaitUntilContext;
   },
   error: unknown,
 ) => {

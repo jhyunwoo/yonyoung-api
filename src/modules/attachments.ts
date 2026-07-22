@@ -1,5 +1,6 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import type HonoAppType from "../types/honoAppType";
+import type { AppBindings } from "../types/honoAppType";
 import { badRequest, forbidden, noContent, notFound, ok } from "../lib/http/response";
 import { parseBody } from "../lib/validation/request";
 import type { AppDependencies } from "../lib/services/dependencies";
@@ -9,7 +10,12 @@ import { respondWithPublicCache } from "../lib/http/public-cache";
 import { can } from "../lib/authorization/policy";
 import type { Resource, Role } from "../lib/authorization/types";
 import type { AttachmentScope, CreateAttachmentInput } from "../lib/services/types";
-import { parseManagedObjectKey } from "../lib/storage/presign";
+import {
+  parseManagedObjectKey,
+  resolvePublicObjectBaseOrigin,
+  resolvePublicObjectSigningSecrets,
+  verifySignedPublicObjectSignature,
+} from "../lib/storage/presign";
 import {
   dataResponse,
   createdResponse,
@@ -24,6 +30,7 @@ import {
   ApiIdParamSchema,
   ApiUpdateAttachmentSchema,
 } from "../lib/openapi/schemas";
+import { isHttpUrl } from "../lib/validation/url";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -45,14 +52,28 @@ const canManageScope = (role: Role, scope: AttachmentScope): boolean => {
 };
 
 /**
- * fileUrl이 우리 서비스가 발급한 공개 미디어 URL(/api/public/media/...)이며,
- * 해당 scope의 file 슬롯 objectKey를 가리키는지 검증한다.
+ * fileUrl이 유효한 공개 미디어 URL이며 해당 scope의 file 슬롯 objectKey를
+ * 가리키는지 검증한다. actorId를 전달한 생성 경로에서는 발급 대상 사용자도 검증한다.
  */
-const isValidManagedFileUrl = (fileUrl: string, scope: AttachmentScope): boolean => {
+const isValidManagedFileUrl = async (input: {
+  fileUrl: string;
+  scope: AttachmentScope;
+  actorId?: string;
+  env: AppBindings;
+}): Promise<boolean> => {
   let parsedUrl: URL;
   try {
-    parsedUrl = new URL(fileUrl);
+    parsedUrl = new URL(input.fileUrl);
   } catch {
+    return false;
+  }
+
+  if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+    return false;
+  }
+
+  const expectedOrigin = resolvePublicObjectBaseOrigin(input.env);
+  if (!expectedOrigin || parsedUrl.origin !== expectedOrigin) {
     return false;
   }
 
@@ -77,7 +98,24 @@ const isValidManagedFileUrl = (fileUrl: string, scope: AttachmentScope): boolean
     return false;
   }
 
-  return parsedKey.slot === "file" && parsedKey.resourcePath === uploadPathByScope[scope];
+  if (
+    parsedKey.slot !== "file" ||
+    parsedKey.resourcePath !== uploadPathByScope[input.scope] ||
+    (input.actorId !== undefined && parsedKey.actorId !== input.actorId)
+  ) {
+    return false;
+  }
+
+  const signingSecrets = resolvePublicObjectSigningSecrets(input.env);
+  if (signingSecrets.length === 0) {
+    return false;
+  }
+
+  return verifySignedPublicObjectSignature({
+    objectKey,
+    signature: parsedUrl.searchParams.get("sig"),
+    signingSecrets,
+  });
 };
 
 const listAttachmentsRoute = createRoute({
@@ -220,7 +258,12 @@ export const registerAttachmentRoutes = (
     const isLinkAttachment = body.data.linkUrl !== undefined;
     if (
       !isLinkAttachment &&
-      !isValidManagedFileUrl(body.data.fileUrl ?? "", body.data.scope)
+      !(await isValidManagedFileUrl({
+        fileUrl: body.data.fileUrl ?? "",
+        scope: body.data.scope,
+        actorId: actorResult.actor.id,
+        env: c.env,
+      }))
     ) {
       return badRequest(
         c,
@@ -348,11 +391,42 @@ export const registerAttachmentRoutes = (
         return badRequest(c, query.error.issues[0]?.message ?? "잘못된 요청입니다.");
       }
 
-      const data = await dependencies
-        .getDataService(c)
-        .listAttachments(query.data.scope, query.data.resourceId ?? null);
+      const dataService = dependencies.getDataService(c);
+      if (query.data.scope === "activity") {
+        if (!query.data.resourceId) {
+          return ok(c, []);
+        }
 
-      return ok(c, data);
+        const activity = await dataService.getActivityById(query.data.resourceId);
+        if (!activity) {
+          return ok(c, []);
+        }
+      }
+
+      const data = await dataService.listAttachments(
+        query.data.scope,
+        query.data.resourceId ?? null,
+      );
+
+      const publicVisibility = await Promise.all(
+        data.map(async (attachment) => {
+          if (attachment.linkUrl !== null) {
+            return isHttpUrl(attachment.linkUrl);
+          }
+
+          if (attachment.fileUrl === null) {
+            return false;
+          }
+
+          return isValidManagedFileUrl({
+            fileUrl: attachment.fileUrl,
+            scope: attachment.scope,
+            env: c.env,
+          });
+        }),
+      );
+
+      return ok(c, data.filter((_, index) => publicVisibility[index]));
     }),
   );
 };

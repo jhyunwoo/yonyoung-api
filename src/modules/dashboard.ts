@@ -3,7 +3,7 @@ import HonoAppType from "../types/honoAppType";
 import { badRequest, forbidden, ok } from "../lib/http/response";
 import { AppDependencies } from "../lib/services/dependencies";
 import { requireActor } from "../lib/http/authz";
-import { can } from "../lib/authorization/policy";
+import { isManagerLikeRole } from "../lib/authorization/policy";
 import { dataResponse, errorResponses } from "../lib/openapi/responses";
 import {
   ApiAdminDashboardStatsQuerySchema,
@@ -51,7 +51,7 @@ export const registerDashboardRoutes = (
       return actorResult.response;
     }
 
-    if (!can(actorResult.actor.role, "user", "read")) {
+    if (!isManagerLikeRole(actorResult.actor.role)) {
       return forbidden(c);
     }
 

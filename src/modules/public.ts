@@ -32,6 +32,12 @@ import {
   resolvePublicObjectSigningSecrets,
   verifySignedPublicObjectSignature,
 } from "../lib/storage/presign";
+import {
+  isEntityPageViewType,
+  normalizePageViewResourceId,
+} from "../lib/views/page-view-target";
+import { isHttpUrl } from "../lib/validation/url";
+import { DEFAULT_SITE_SETTINGS } from "../shared/api-contracts";
 
 type App = OpenAPIHono<HonoAppType>;
 const PUBLIC_MEDIA_CACHE_CONTROL =
@@ -50,6 +56,73 @@ const sanitizeActivityDescriptionField = <T extends { description: string }>(
 ): T => ({
   ...activity,
   description: sanitizeRichTextHtml(activity.description),
+});
+
+type PublicMediaEntity = {
+  coverImageUrl: string;
+  detailImages: Array<{ imageUrl: string }>;
+};
+
+const sanitizePublicMediaUrls = <T extends PublicMediaEntity>(
+  entity: T,
+): T | null => {
+  if (!isHttpUrl(entity.coverImageUrl)) {
+    return null;
+  }
+
+  return {
+    ...entity,
+    detailImages: entity.detailImages.filter((image) =>
+      isHttpUrl(image.imageUrl),
+    ),
+  };
+};
+
+const sanitizePublicActivity = <
+  T extends PublicMediaEntity & { description: string },
+>(
+  activity: T,
+): T | null => {
+  const sanitized = sanitizePublicMediaUrls(activity);
+  return sanitized ? sanitizeActivityDescriptionField(sanitized) : null;
+};
+
+const sanitizePublicExhibition = <
+  T extends PublicMediaEntity & { description: string },
+>(
+  exhibition: T,
+): T | null => {
+  const sanitized = sanitizePublicMediaUrls(exhibition);
+  return sanitized ? sanitizeExhibitionDescriptionField(sanitized) : null;
+};
+
+const sanitizePublicLinktree = <
+  T extends { items: Array<{ link: string }> },
+>(
+  linktree: T,
+): T => ({
+  ...linktree,
+  // 기존 데이터에 남아 있을 수 있는 실행 가능 URL 스킴을 공개 링크로 재노출하지 않는다.
+  items: linktree.items.filter((item) => isHttpUrl(item.link)),
+});
+
+const sanitizePublicSiteSettings = <T extends { footerOpenChatUrl: string }>(
+  settings: T,
+): T => ({
+  ...settings,
+  footerOpenChatUrl: isHttpUrl(settings.footerOpenChatUrl)
+    ? settings.footerOpenChatUrl
+    : DEFAULT_SITE_SETTINGS.footerOpenChatUrl,
+});
+
+const sanitizePublicRecruitingPlan = <
+  T extends { content: string; promotionImageUrls: string[] },
+>(
+  plan: T,
+): T => ({
+  ...plan,
+  content: sanitizeRichTextHtml(plan.content),
+  promotionImageUrls: plan.promotionImageUrls.filter(isHttpUrl),
 });
 
 const CONTENT_TYPE_BY_EXTENSION = {
@@ -304,7 +377,7 @@ export const registerPublicRoutes = (
     if (signingSecrets.length === 0) {
       return internalError(
         c,
-        "스토리지 공개 URL 서명 설정(R2_PUBLIC_URL_SIGNING_SECRET 또는 BETTER_AUTH_SECRET)이 누락되었습니다.",
+        "스토리지 공개 URL 검증용 서명 설정이 누락되었습니다.",
       );
     }
 
@@ -362,7 +435,12 @@ export const registerPublicRoutes = (
   app.openapi(listPublicActivitiesRoute, async (c): Promise<any> =>
     respondWithPublicCache(c, async () => {
       const data = await dependencies.getDataService(c).listPublicActivities();
-      return ok(c, data.map(sanitizeActivityDescriptionField));
+      const sanitized = data
+        .map(sanitizePublicActivity)
+        .filter((activity): activity is NonNullable<typeof activity> =>
+          Boolean(activity),
+        );
+      return ok(c, sanitized);
     }),
   );
 
@@ -379,14 +457,20 @@ export const registerPublicRoutes = (
       if (!data) {
         return notFound(c);
       }
-      return ok(c, sanitizeActivityDescriptionField(data));
+      const sanitized = sanitizePublicActivity(data);
+      return sanitized ? ok(c, sanitized) : notFound(c);
     }),
   );
 
   app.openapi(listPublicExhibitionsRoute, async (c): Promise<any> =>
     respondWithPublicCache(c, async () => {
       const data = await dependencies.getDataService(c).listPublicExhibitions();
-      return ok(c, data.map(sanitizeExhibitionDescriptionField));
+      const sanitized = data
+        .map(sanitizePublicExhibition)
+        .filter((exhibition): exhibition is NonNullable<typeof exhibition> =>
+          Boolean(exhibition),
+        );
+      return ok(c, sanitized);
     }),
   );
 
@@ -403,28 +487,29 @@ export const registerPublicRoutes = (
       if (!data) {
         return notFound(c);
       }
-      return ok(c, sanitizeExhibitionDescriptionField(data));
+      const sanitized = sanitizePublicExhibition(data);
+      return sanitized ? ok(c, sanitized) : notFound(c);
     }),
   );
 
   app.openapi(listPublicLinktreeRoute, async (c): Promise<any> =>
     respondWithPublicCache(c, async () => {
       const data = await dependencies.getDataService(c).listLinktrees();
-      return ok(c, data);
+      return ok(c, data.map(sanitizePublicLinktree));
     }),
   );
 
   app.openapi(getPublicSiteSettingsRoute, async (c): Promise<any> =>
     respondWithPublicCache(c, async () => {
       const data = await dependencies.getDataService(c).getSiteSettings();
-      return ok(c, data);
+      return ok(c, sanitizePublicSiteSettings(data));
     }),
   );
 
   app.openapi(getPublicCurrentRecruitingPlanRoute, async (c): Promise<any> =>
     respondWithPublicCache(c, async () => {
       const data = await dependencies.getDataService(c).getCurrentRecruitingPlan();
-      return ok(c, data);
+      return ok(c, data ? sanitizePublicRecruitingPlan(data) : null);
     }),
   );
 
@@ -474,12 +559,15 @@ export const registerPublicRoutes = (
           .map((user) => ({
             id: user.id,
             name: user.name,
-            image: user.image,
-            showcaseImageUrls: user.showcaseImageUrls,
+            image: user.image && isHttpUrl(user.image) ? user.image : null,
+            showcaseImageUrls: user.showcaseImageUrls.filter(isHttpUrl),
             familyName: user.familyName,
             givenName: user.givenName,
             collaborationAvailable: user.collaborationAvailable,
-            personalLink: user.personalLink,
+            personalLink:
+              user.personalLink && isHttpUrl(user.personalLink)
+                ? user.personalLink
+                : null,
             role: user.role,
             generationId: generation.id,
           }))
@@ -510,12 +598,34 @@ export const registerPublicRoutes = (
       );
     }
 
-    const { resourceType, resourceId } = parsed.data;
+    const { resourceType } = parsed.data;
+    const resourceId = normalizePageViewResourceId(
+      resourceType,
+      parsed.data.resourceId,
+    );
+
+    if (!(await dependencies.allowPageViewWrite(c))) {
+      return noContent(c);
+    }
+
     const store = dependencies.getViewCountStore(c);
     const dataService = dependencies.getDataService(c);
 
+    let isActiveTarget = false;
+    try {
+      isActiveTarget = await dataService.isActiveViewResource(
+        resourceType,
+        resourceId,
+      );
+    } catch {
+      // Fail closed on validation lookup errors without changing the 204 contract.
+    }
+    if (!isActiveTarget) {
+      return noContent(c);
+    }
+
     // 1. aggregated count 업데이트 (public display용)
-    await store.recordView(resourceType, resourceId ?? resourceType);
+    await store.recordView(resourceType, resourceId);
     
     // 2. detailed log 기록 (admin stats용)
     try {
@@ -554,8 +664,7 @@ export const registerPublicRoutes = (
       return badRequest(c, "한 번에 최대 100개의 리소스만 조회할 수 있습니다.");
     }
 
-    const isUuidType = resourceType === "activity" || resourceType === "exhibition" || resourceType === "notice";
-    if (isUuidType) {
+    if (isEntityPageViewType(resourceType)) {
       const invalidResourceId = resourceIds.find(
         (id) => !ViewResourceIdSchema.safeParse(id).success,
       );
@@ -565,12 +674,20 @@ export const registerPublicRoutes = (
     }
 
     const store = dependencies.getViewCountStore(c);
-    const counts = await store.getViewCounts(resourceType, resourceIds);
+    const normalizedResourceIds = Array.from(
+      new Set(
+        resourceIds.map((resourceId) =>
+          normalizePageViewResourceId(resourceType, resourceId),
+        ),
+      ),
+    );
+    const counts = await store.getViewCounts(resourceType, normalizedResourceIds);
 
     // 요청된 모든 리소스 ID에 대해 결과를 보장 (없으면 0)
     const result: Record<string, number> = {};
     for (const id of resourceIds) {
-      result[id] = counts[id] ?? 0;
+      const normalizedId = normalizePageViewResourceId(resourceType, id);
+      result[id] = counts[normalizedId] ?? 0;
     }
 
     const response = ok(c, result);

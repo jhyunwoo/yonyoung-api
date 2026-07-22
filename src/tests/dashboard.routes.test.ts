@@ -142,4 +142,37 @@ describe("dashboard routes", () => {
     expect(response.status).toBe(403);
     await expectErrorCode(response, "FORBIDDEN");
   });
+
+  it.each(["new_member", "associate_member", "regular_member"] as const)(
+    "GET /api/admin/dashboard는 일반 회원 역할 %s의 집계 조회를 차단한다",
+    async (role) => {
+      const getAdminDashboardStats = fn(async () => ({
+        usersTotal: 0,
+        unverifiedUsersTotal: 0,
+        generationsTotal: 0,
+        selectedGenerationMembersTotal: 0,
+        selectedGenerationActivitiesTotal: 0,
+        selectedGenerationExhibitionsTotal: 0,
+        linktreeLinksTotal: 0,
+      }));
+      const list = vi.fn(async () => ({
+        objects: [],
+        truncated: false,
+        cursor: undefined,
+      }));
+      const app = createTestApp({
+        actor: createActor(role, IDs.member),
+        dataService: createDataServiceMock({ getAdminDashboardStats }),
+      });
+
+      const response = await app.request("/api/admin/dashboard", undefined, {
+        r2: { list },
+      });
+
+      expect(response.status).toBe(403);
+      await expectErrorCode(response, "FORBIDDEN");
+      expect(getAdminDashboardStats).not.toHaveBeenCalled();
+      expect(list).not.toHaveBeenCalled();
+    },
+  );
 });

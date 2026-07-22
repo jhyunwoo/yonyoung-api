@@ -54,6 +54,39 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     expect(getUserById).not.toHaveBeenCalled();
   });
 
+  it("사용자 목록 응답에서 레거시 실행 가능 URL을 제거한다", async () => {
+    const legacyUser = createUser({
+      id: IDs.member,
+      image: "data:image/svg+xml,<svg></svg>",
+      showcaseImageUrls: [
+        "javascript:alert(1)",
+        "https://example.com/safe.jpg",
+      ],
+      personalLink: "javascript:alert(1)",
+    });
+    const app = createTestApp({
+      actor: createActor("vice_president", IDs.vicePresident),
+      dataService: createDataServiceMock({
+        listUsers: fn(async () => [legacyUser]),
+      }),
+    });
+
+    const response = await app.request("/api/users");
+    expect(response.status).toBe(200);
+    const body = await readJson<{
+      data: Array<{
+        image: string | null;
+        showcaseImageUrls: string[];
+        personalLink: string | null;
+      }>;
+    }>(response);
+    expect(body.data[0]).toMatchObject({
+      image: null,
+      showcaseImageUrls: ["https://example.com/safe.jpg"],
+      personalLink: null,
+    });
+  });
+
   it("인증 사용자는 /api/users/me에서 본인 프로필을 조회할 수 있다", async () => {
     const actorId = "user|member-0001";
     const me = createUser({ id: actorId, role: "regular_member" });
@@ -69,6 +102,36 @@ describe("user routes additional coverage", /** describe 실행 과정에서 필
     const body = await readJson<{ data: { id: string } }>(response);
     expect(body.data.id).toBe(actorId);
     expect(getUserById).toHaveBeenCalledWith(actorId);
+  });
+
+  it("사용자 상세 응답에서 레거시 실행 가능 URL을 제거한다", async () => {
+    const legacyUser = createUser({
+      id: IDs.member,
+      image: "javascript:alert(1)",
+      showcaseImageUrls: ["data:text/html,unsafe"],
+      personalLink: "vbscript:msgbox(1)",
+    });
+    const app = createTestApp({
+      actor: createActor("vice_president", IDs.vicePresident),
+      dataService: createDataServiceMock({
+        getUserById: fn(async () => legacyUser),
+      }),
+    });
+
+    const response = await app.request(`/api/users/${IDs.member}`);
+    expect(response.status).toBe(200);
+    const body = await readJson<{
+      data: {
+        image: string | null;
+        showcaseImageUrls: string[];
+        personalLink: string | null;
+      };
+    }>(response);
+    expect(body.data).toMatchObject({
+      image: null,
+      showcaseImageUrls: [],
+      personalLink: null,
+    });
   });
 
   it("인증되지 않은 요청은 /api/users/me에서 401을 반환한다", async () => {

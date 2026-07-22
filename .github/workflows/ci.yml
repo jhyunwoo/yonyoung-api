@@ -1,5 +1,12 @@
 name: CI
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: ["main", "dev"]
@@ -9,9 +16,12 @@ on:
 jobs:
   quality-gates:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -33,8 +43,19 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Verify generated Cloudflare bindings
+        run: |
+          pnpm cf-typegen
+          git diff --exit-code -- worker-configuration.d.ts
+
       - name: Test
         run: pnpm test
 
       - name: Coverage
         run: pnpm test:coverage
+
+      - name: Cloudflare production dry run
+        run: pnpm deploy:dry-run
+
+      - name: Production dependency audit
+        run: pnpm security:audit

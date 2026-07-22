@@ -4,6 +4,7 @@ import {
   sanitizeRichTextHtml,
   stripRichTextHtmlToText,
 } from "../lib/content/rich-text";
+import { sanitizeExhibitionRichText } from "../lib/content/exhibition-rich-text";
 
 describe("rich-text sanitize helpers", () => {
   it("허용되지 않은 태그/이벤트 핸들러를 제거한다", () => {
@@ -29,6 +30,20 @@ describe("rich-text sanitize helpers", () => {
     );
     expect(unsafe).not.toContain("javascript:");
     expect(unsafe).not.toContain(`target="_self"`);
+  });
+
+  it.each([
+    ["activity", sanitizeRichTextHtml],
+    ["exhibition", sanitizeExhibitionRichText],
+  ])("%s href 값이 속성 경계를 벗어나지 못하도록 escape 한다", (_scope, sanitize) => {
+    const sanitized = sanitize(
+      `<a href='https://example.com" data-validation-marker="present'>link</a>`,
+    );
+
+    expect(sanitized).toBe(
+      `<a href="https://example.com&quot; data-validation-marker=&quot;present">link</a>`,
+    );
+    expect(sanitized).not.toContain(`data-validation-marker="present"`);
   });
 
   it("table span 속성은 양의 정수만 허용한다", () => {

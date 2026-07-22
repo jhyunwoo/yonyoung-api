@@ -19,6 +19,13 @@ type App = OpenAPIHono<HonoAppType>;
 const isPrivilegedActor = (role: string): boolean =>
   role === "president" || role === "vice_president";
 
+const sanitizeRecruitingPlanContentField = <T extends { content: string }>(
+  plan: T,
+): T => ({
+  ...plan,
+  content: sanitizeRichTextHtml(plan.content),
+});
+
 const getCurrentRecruitingPlanRoute = createRoute({
   method: "get",
   path: "/api/recruiting-plan/current",
@@ -70,7 +77,7 @@ export const registerRecruitingPlanRoutes = (
     }
 
     const data = await dependencies.getDataService(c).getCurrentRecruitingPlan();
-    return ok(c, data);
+    return ok(c, data ? sanitizeRecruitingPlanContentField(data) : null);
   });
 
   app.openapi(upsertCurrentRecruitingPlanRoute, async (c): Promise<any> => {
@@ -104,6 +111,6 @@ export const registerRecruitingPlanRoutes = (
       recruitmentStartAt: new Date(body.data.recruitmentStartAt),
       recruitmentEndAt: new Date(body.data.recruitmentEndAt),
     });
-    return ok(c, data);
+    return ok(c, sanitizeRecruitingPlanContentField(data));
   });
 };

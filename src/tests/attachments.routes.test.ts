@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AttachmentEntity } from "../lib/services/types";
 import {
   IDs,
+  MANAGED_FILE_TEST_ENV,
   buildManagedFileUrl,
   createActor,
   createAttachment,
@@ -94,7 +95,7 @@ describe("attachments routes", () => {
     const validFilePayload = {
       scope: "site_donate",
       title: "2026년 6월 회계 내역",
-      fileUrl: buildManagedFileUrl("site"),
+      fileUrl: buildManagedFileUrl("site", IDs.vicePresident),
       fileName: "2026-06-회계내역.pdf",
       fileSize: 1048576,
       mimeType: "application/pdf",
@@ -107,11 +108,15 @@ describe("attachments routes", () => {
         dataService: createDataServiceMock({ addAttachment }),
       });
 
-      const response = await app.request("/api/attachments", {
-        method: "POST",
-        headers: jsonHeaders,
-        body: JSON.stringify(validFilePayload),
-      });
+      const response = await app.request(
+        "/api/attachments",
+        {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify(validFilePayload),
+        },
+        MANAGED_FILE_TEST_ENV,
+      );
 
       expect(response.status).toBe(403);
       await expectErrorCode(response, "FORBIDDEN");
@@ -126,11 +131,15 @@ describe("attachments routes", () => {
         dataService: createDataServiceMock({ addAttachment, createAuditLog }),
       });
 
-      const response = await app.request("/api/attachments", {
-        method: "POST",
-        headers: jsonHeaders,
-        body: JSON.stringify(validFilePayload),
-      });
+      const response = await app.request(
+        "/api/attachments",
+        {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify(validFilePayload),
+        },
+        MANAGED_FILE_TEST_ENV,
+      );
 
       expect(response.status).toBe(201);
       const body = await readJson<{ data: { id: string; linkUrl: string | null } }>(
@@ -273,21 +282,80 @@ describe("attachments routes", () => {
       expect(addAttachment).not.toHaveBeenCalled();
     });
 
-    it("공개 미디어 URL이 아닌 fileUrl은 400을 반환한다", async () => {
+    it("설정된 BETTER_AUTH_URL과 origin이 다른 fileUrl은 400을 반환한다", async () => {
       const addAttachment = fn(async () => createAttachment());
       const app = createTestApp({
         actor: createActor("vice_president", IDs.vicePresident),
         dataService: createDataServiceMock({ addAttachment }),
       });
 
-      const response = await app.request("/api/attachments", {
-        method: "POST",
-        headers: jsonHeaders,
-        body: JSON.stringify({
-          ...validFilePayload,
-          fileUrl: "https://evil.example.com/file.pdf",
-        }),
+      const foreignOriginUrl = new URL(validFilePayload.fileUrl);
+      foreignOriginUrl.host = "evil.example.com";
+
+      const response = await app.request(
+        "/api/attachments",
+        {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            ...validFilePayload,
+            fileUrl: foreignOriginUrl.toString(),
+          }),
+        },
+        MANAGED_FILE_TEST_ENV,
+      );
+
+      expect(response.status).toBe(400);
+      await expectErrorCode(response, "BAD_REQUEST");
+      expect(addAttachment).not.toHaveBeenCalled();
+    });
+
+    it("서명이 변조된 fileUrl은 400을 반환한다", async () => {
+      const addAttachment = fn(async () => createAttachment());
+      const app = createTestApp({
+        actor: createActor("vice_president", IDs.vicePresident),
+        dataService: createDataServiceMock({ addAttachment }),
       });
+      const tamperedUrl = new URL(validFilePayload.fileUrl);
+      tamperedUrl.searchParams.set("sig", "tampered-signature");
+
+      const response = await app.request(
+        "/api/attachments",
+        {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            ...validFilePayload,
+            fileUrl: tamperedUrl.toString(),
+          }),
+        },
+        MANAGED_FILE_TEST_ENV,
+      );
+
+      expect(response.status).toBe(400);
+      await expectErrorCode(response, "BAD_REQUEST");
+      expect(addAttachment).not.toHaveBeenCalled();
+    });
+
+    it("다른 사용자가 발급받은 fileUrl은 400을 반환한다", async () => {
+      const addAttachment = fn(async () => createAttachment());
+      const app = createTestApp({
+        actor: createActor("vice_president", IDs.vicePresident),
+        dataService: createDataServiceMock({ addAttachment }),
+      });
+
+      const response = await app.request(
+        "/api/attachments",
+        {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            ...validFilePayload,
+            fileUrl: buildManagedFileUrl("site", IDs.president),
+          }),
+        },
+        MANAGED_FILE_TEST_ENV,
+      );
 
       expect(response.status).toBe(400);
       await expectErrorCode(response, "BAD_REQUEST");
@@ -301,15 +369,19 @@ describe("attachments routes", () => {
         dataService: createDataServiceMock({ addAttachment }),
       });
 
-      const response = await app.request("/api/attachments", {
-        method: "POST",
-        headers: jsonHeaders,
-        body: JSON.stringify({
-          ...validFilePayload,
-          // site_donate scope인데 activities 경로의 파일을 첨부하려는 경우
-          fileUrl: buildManagedFileUrl("activities"),
-        }),
-      });
+      const response = await app.request(
+        "/api/attachments",
+        {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            ...validFilePayload,
+            // site_donate scope인데 activities 경로의 파일을 첨부하려는 경우
+            fileUrl: buildManagedFileUrl("activities", IDs.vicePresident),
+          }),
+        },
+        MANAGED_FILE_TEST_ENV,
+      );
 
       expect(response.status).toBe(400);
       await expectErrorCode(response, "BAD_REQUEST");
@@ -329,19 +401,23 @@ describe("attachments routes", () => {
         dataService: createDataServiceMock({ addAttachment, createAuditLog }),
       });
 
-      const response = await app.request("/api/attachments", {
-        method: "POST",
-        headers: jsonHeaders,
-        body: JSON.stringify({
-          scope: "activity",
-          resourceId: IDs.activity,
-          title: "월간연영회 5월호",
-          fileUrl: buildManagedFileUrl("activities", IDs.manager),
-          fileName: "월간연영회 5월호.pdf",
-          fileSize: 27626263,
-          mimeType: "application/pdf",
-        }),
-      });
+      const response = await app.request(
+        "/api/attachments",
+        {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            scope: "activity",
+            resourceId: IDs.activity,
+            title: "월간연영회 5월호",
+            fileUrl: buildManagedFileUrl("activities", IDs.manager),
+            fileName: "월간연영회 5월호.pdf",
+            fileSize: 27626263,
+            mimeType: "application/pdf",
+          }),
+        },
+        MANAGED_FILE_TEST_ENV,
+      );
 
       expect(response.status).toBe(201);
       expect(addAttachment).toHaveBeenCalledWith(
@@ -381,19 +457,23 @@ describe("attachments routes", () => {
         dataService: createDataServiceMock({ addAttachment }),
       });
 
-      const response = await app.request("/api/attachments", {
-        method: "POST",
-        headers: jsonHeaders,
-        body: JSON.stringify({
-          scope: "activity",
-          resourceId: IDs.otherUuid,
-          title: "월간연영회 5월호",
-          fileUrl: buildManagedFileUrl("activities", IDs.manager),
-          fileName: "월간연영회 5월호.pdf",
-          fileSize: 27626263,
-          mimeType: "application/pdf",
-        }),
-      });
+      const response = await app.request(
+        "/api/attachments",
+        {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            scope: "activity",
+            resourceId: IDs.otherUuid,
+            title: "월간연영회 5월호",
+            fileUrl: buildManagedFileUrl("activities", IDs.manager),
+            fileName: "월간연영회 5월호.pdf",
+            fileSize: 27626263,
+            mimeType: "application/pdf",
+          }),
+        },
+        MANAGED_FILE_TEST_ENV,
+      );
 
       expect(response.status).toBe(404);
       await expectErrorCode(response, "NOT_FOUND");
@@ -582,12 +662,82 @@ describe("attachments routes", () => {
         dataService: createDataServiceMock({ listAttachments }),
       });
 
-      const response = await app.request("/api/public/attachments?scope=site_donate");
+      const response = await app.request(
+        "/api/public/attachments?scope=site_donate",
+        undefined,
+        MANAGED_FILE_TEST_ENV,
+      );
 
       expect(response.status).toBe(200);
       const body = await readJson<{ data: Array<{ id: string }> }>(response);
       expect(body.data).toHaveLength(1);
       expect(listAttachments).toHaveBeenCalledWith("site_donate", null);
+    });
+
+    it("레거시 공개 첨부 중 안전한 외부 링크와 검증된 관리 파일만 반환한다", async () => {
+      const foreignFileUrl = new URL(buildManagedFileUrl("site"));
+      foreignFileUrl.host = "evil.example.com";
+      const listAttachments = fn(async () => [
+        createAttachment({ title: "검증된 관리 파일" }),
+        createAttachment({
+          title: "안전한 외부 링크",
+          fileUrl: null,
+          fileName: null,
+          fileSize: null,
+          mimeType: null,
+          linkUrl: "https://docs.example.com/report",
+        }),
+        createAttachment({
+          title: "실행 가능 링크",
+          fileUrl: null,
+          fileName: null,
+          fileSize: null,
+          mimeType: null,
+          linkUrl: "javascript:alert(1)",
+        }),
+        createAttachment({
+          title: "외부 origin 파일",
+          fileUrl: foreignFileUrl.toString(),
+        }),
+      ]);
+      const app = createTestApp({
+        actor: null,
+        dataService: createDataServiceMock({ listAttachments }),
+      });
+
+      const response = await app.request(
+        "/api/public/attachments?scope=site_donate",
+        undefined,
+        MANAGED_FILE_TEST_ENV,
+      );
+
+      expect(response.status).toBe(200);
+      const body = await readJson<{ data: Array<{ title: string }> }>(response);
+      expect(body.data.map((attachment) => attachment.title)).toEqual([
+        "검증된 관리 파일",
+        "안전한 외부 링크",
+      ]);
+    });
+
+    it("상위 활동이 없거나 삭제된 경우 공개 첨부 목록을 비워 반환한다", async () => {
+      const getActivityById = fn(async () => null);
+      const listAttachments = fn(async () => [
+        createAttachment({ scope: "activity", resourceId: IDs.activity }),
+      ]);
+      const app = createTestApp({
+        actor: null,
+        dataService: createDataServiceMock({ getActivityById, listAttachments }),
+      });
+
+      const response = await app.request(
+        `/api/public/attachments?scope=activity&resourceId=${IDs.activity}`,
+      );
+
+      expect(response.status).toBe(200);
+      const body = await readJson<{ data: AttachmentEntity[] }>(response);
+      expect(body.data).toEqual([]);
+      expect(getActivityById).toHaveBeenCalledWith(IDs.activity);
+      expect(listAttachments).not.toHaveBeenCalled();
     });
 
     it("잘못된 resourceId는 400을 반환한다", async () => {

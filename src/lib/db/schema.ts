@@ -1,5 +1,12 @@
 import { relations, sql } from "drizzle-orm";
-import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 const nowTimestamp = sql`(cast(unixepoch('subsecond') * 1000 as integer))`;
 
@@ -8,7 +15,7 @@ export const generations = sqliteTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
-    sortOrder: integer("sort_order").notNull().unique(),
+    sortOrder: integer("sort_order").notNull(),
     startDate: integer("start_date", { mode: "timestamp_ms" }).notNull(),
     endDate: integer("end_date", { mode: "timestamp_ms" }).notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
@@ -28,7 +35,15 @@ export const generations = sqliteTable(
    * @returns 함수 실행 결과를 반환합니다.
    * @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다.
    */
-  (table) => [index("generations_start_date_idx").on(table.startDate)],
+  (table) => [
+    index("generations_start_date_idx").on(table.startDate),
+    uniqueIndex("generations_active_name_unique")
+      .on(table.name)
+      .where(sql`${table.deletedAt} is null`),
+    uniqueIndex("generations_active_sort_order_unique")
+      .on(table.sortOrder)
+      .where(sql`${table.deletedAt} is null`),
+  ],
 );
 
 export const user = sqliteTable("user", {
@@ -471,6 +486,54 @@ export const attachments = sqliteTable(
   ],
 );
 
+export const uploadReservations = sqliteTable(
+  "upload_reservations",
+  {
+    id: text("id").primaryKey(),
+    actorId: text("actor_id").notNull(),
+    fileSize: integer("file_size").notNull(),
+    observedUsedBytes: integer("observed_used_bytes").notNull(),
+    observedAt: integer("observed_at", { mode: "timestamp_ms" }).notNull(),
+    grantExpiresAt: integer("grant_expires_at", { mode: "timestamp_ms" }).notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(nowTimestamp)
+      .notNull(),
+  },
+  (table) => [
+    index("upload_reservations_actor_expiry_idx").on(
+      table.actorId,
+      table.expiresAt,
+    ),
+    index("upload_reservations_expiry_idx").on(table.expiresAt),
+  ],
+);
+
+export const multipartUploads = sqliteTable(
+  "multipart_uploads",
+  {
+    uploadId: text("upload_id").primaryKey(),
+    objectKey: text("object_key").notNull().unique(),
+    reservationId: text("reservation_id"),
+    actorId: text("actor_id").notNull(),
+    contentType: text("content_type").notNull(),
+    fileSize: integer("file_size").notNull(),
+    partSize: integer("part_size").notNull(),
+    maxPartNumber: integer("max_part_number").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(nowTimestamp)
+      .notNull(),
+  },
+  (table) => [
+    index("multipart_uploads_actor_expiry_idx").on(
+      table.actorId,
+      table.expiresAt,
+    ),
+    index("multipart_uploads_expiry_idx").on(table.expiresAt),
+  ],
+);
+
 export const auditLogs = sqliteTable(
   "audit_logs",
   {
@@ -600,6 +663,7 @@ export const pageViews = sqliteTable(
     id: text("id").primaryKey(),
     pageType: text("page_type").notNull(), // 'home' | 'activity' | 'exhibition'
     resourceId: text("resource_id"), // null for home
+    viewCount: integer("view_count").default(1).notNull(),
     visitedAt: integer("visited_at", { mode: "timestamp_ms" })
       .default(nowTimestamp)
       .notNull(),

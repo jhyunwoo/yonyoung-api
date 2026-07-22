@@ -9,8 +9,9 @@ import { z } from "@hono/zod-openapi";
 import { badRequest, forbidden, ok } from "../lib/http/response";
 import { AppDependencies } from "../lib/services/dependencies";
 import { requireActor } from "../lib/http/authz";
-import { can } from "../lib/authorization/policy";
+import { isManagerLikeRole } from "../lib/authorization/policy";
 import HonoAppType from "../types/honoAppType";
+import { normalizePageViewResourceId } from "../lib/views/page-view-target";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -89,10 +90,32 @@ export const registerPageViewRoutes = (
       return badRequest(c, parsed.error.issues[0]?.message ?? "잘못된 요청입니다.");
     }
 
+    if (!(await dependencies.allowPageViewWrite(c))) {
+      return c.json({ ok: true } as const, 200);
+    }
+
+    const dataService = dependencies.getDataService(c);
+    const { pageType } = parsed.data;
+    const resourceId = normalizePageViewResourceId(
+      pageType,
+      parsed.data.resourceId,
+    );
+
+    let isActiveTarget = false;
     try {
-      await dependencies
-        .getDataService(c)
-        .recordPageView(parsed.data.pageType, parsed.data.resourceId);
+      isActiveTarget = await dataService.isActiveViewResource(
+        pageType,
+        resourceId,
+      );
+    } catch {
+      // Validation lookup failure is fail-closed, while preserving the public API.
+    }
+    if (!isActiveTarget) {
+      return c.json({ ok: true } as const, 200);
+    }
+
+    try {
+      await dataService.recordPageView(pageType, resourceId);
     } catch {
       // fire-and-forget: 기록 실패는 무시
     }
@@ -101,8 +124,7 @@ export const registerPageViewRoutes = (
     // activity, exhibition, notice, home 타입에 대해 통합 관리
     try {
       const store = dependencies.getViewCountStore(c);
-      const { pageType, resourceId } = parsed.data;
-      await store.recordView(pageType, resourceId ?? pageType);
+      await store.recordView(pageType, resourceId);
     } catch {
       // fire-and-forget: 기록 실패는 무시
     }
@@ -116,7 +138,7 @@ export const registerPageViewRoutes = (
       return actorResult.response;
     }
 
-    if (!can(actorResult.actor.role, "user", "read")) {
+    if (!isManagerLikeRole(actorResult.actor.role)) {
       return forbidden(c);
     }
 
@@ -130,7 +152,7 @@ export const registerPageViewRoutes = (
       return actorResult.response;
     }
 
-    if (!can(actorResult.actor.role, "user", "read")) {
+    if (!isManagerLikeRole(actorResult.actor.role)) {
       return forbidden(c);
     }
 
