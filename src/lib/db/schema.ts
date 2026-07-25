@@ -260,6 +260,10 @@ export const activityImages = sqliteTable(
       .references 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => activities.id, { onDelete: "cascade" }),
     imageUrl: text("image_url").notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
+    // 업로드 시 측정한 원본 픽셀 크기 — 공개 갤러리가 CLS 없이 원본 비율로 렌더링한다.
+    // 측정 전에 업로드된 레거시 행은 null이며 프런트가 로드 후 비율을 보정한다.
+    width: integer("width"),
+    height: integer("height"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(nowTimestamp)
       .notNull(),
@@ -353,6 +357,10 @@ export const exhibitionImages = sqliteTable(
       .references 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => exhibitions.id, { onDelete: "cascade" }),
     imageUrl: text("image_url").notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
+    // 업로드 시 측정한 원본 픽셀 크기 — 공개 갤러리가 CLS 없이 원본 비율로 렌더링한다.
+    // 측정 전에 업로드된 레거시 행은 null이며 프런트가 로드 후 비율을 보정한다.
+    width: integer("width"),
+    height: integer("height"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(nowTimestamp)
       .notNull(),

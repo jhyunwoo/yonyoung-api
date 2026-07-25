@@ -243,6 +243,46 @@ describe("public routes", () => {
     expect(body.data[0]?.description).not.toContain("onclick=");
   });
 
+  it("공개 세부 이미지 응답은 원본 픽셀 크기를 노출하고 레거시 행은 null로 내려준다", async () => {
+    const app = createTestApp({
+      actor: null,
+      dataService: createDataServiceMock({
+        listPublicActivities: async () => [
+          createActivity({
+            id: IDs.activity,
+            detailImages: [
+              createActivityImage({
+                imageUrl: "https://safe.example/measured.jpg",
+                width: 4000,
+                height: 3000,
+              }),
+              createActivityImage({
+                id: IDs.otherUuid,
+                imageUrl: "https://safe.example/legacy.jpg",
+              }),
+            ],
+          }),
+        ],
+      }),
+    });
+
+    const response = await app.request("/api/public/activities");
+    const body = await readJson<{
+      data: Array<{
+        detailImages: Array<{
+          width: number | null;
+          height: number | null;
+        }>;
+      }>;
+    }>(response);
+
+    expect(response.status).toBe(200);
+    expect(body.data[0]?.detailImages).toEqual([
+      expect.objectContaining({ width: 4000, height: 3000 }),
+      expect.objectContaining({ width: null, height: null }),
+    ]);
+  });
+
   it("비로그인 접근 시 공개 활동 상세를 조회한다", async () => {
     const getActivityById = fn(async () =>
       createActivity({ id: IDs.activity, title: "활동 상세" }),

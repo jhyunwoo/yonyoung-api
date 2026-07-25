@@ -61,6 +61,24 @@ const httpUrlInputField = (description: string, example: string) =>
       example,
     });
 
+/**
+ * 이미지 응답의 원본 픽셀 크기 필드입니다.
+ * 업로드 시 브라우저에서 측정해 저장하며, 측정 기능 도입 전 레거시 행은 null입니다.
+ * 공개 갤러리는 이 값이 있으면 CLS 없이 원본 비율로 렌더링합니다.
+ */
+const imageDimensionField = (description: string, example: number) =>
+  z.number().int().positive().nullable().openapi({
+    description,
+    example,
+  });
+
+/** 이미지 생성/수정 입력의 원본 픽셀 크기 (HEIC 등 측정 실패 시 생략 가능) */
+const imageDimensionInputField = (description: string, example: number) =>
+  z.number().int().positive().optional().openapi({
+    description,
+    example,
+  });
+
 const studentNumberField = (description: string, example: string) =>
   z
     .string()
@@ -331,6 +349,8 @@ export const ApiActivityImageSchema = z
       description: "세부 이미지 노출 순서",
       example: 0,
     }),
+    width: imageDimensionField("원본 이미지 가로 픽셀 (레거시 데이터는 null)", 3000),
+    height: imageDimensionField("원본 이미지 세로 픽셀 (레거시 데이터는 null)", 2000),
     createdAt: timestampField("세부 이미지 생성 시각", EXAMPLE_TIMESTAMP_MS),
     updatedAt: timestampField("세부 이미지 수정 시각", EXAMPLE_TIMESTAMP_MS),
   })
@@ -467,6 +487,8 @@ export const ApiCreateActivityImageSchema = z
       description: "세부 이미지 표시 순서(기본값 0)",
       example: 0,
     }),
+    width: imageDimensionInputField("원본 이미지 가로 픽셀", 3000),
+    height: imageDimensionInputField("원본 이미지 세로 픽셀", 2000),
   })
   .openapi("ApiCreateActivityImageInput");
 
@@ -480,6 +502,8 @@ export const ApiUpdateActivityImageSchema = z
       description: "수정할 세부 이미지 표시 순서",
       example: 1,
     }),
+    width: imageDimensionInputField("원본 이미지 가로 픽셀", 3000),
+    height: imageDimensionInputField("원본 이미지 세로 픽셀", 2000),
   })
   .strict()
   .openapi("ApiUpdateActivityImageInput");
@@ -503,10 +527,16 @@ const ApiUpdateActivityImageBatchItemSchema = z
       description: "수정할 세부 이미지 표시 순서",
       example: 1,
     }),
+    width: imageDimensionInputField("원본 이미지 가로 픽셀", 3000),
+    height: imageDimensionInputField("원본 이미지 세로 픽셀", 2000),
   })
   .strict()
   .refine(
-    (value) => value.imageUrl !== undefined || value.sortOrder !== undefined,
+    (value) =>
+      value.imageUrl !== undefined ||
+      value.sortOrder !== undefined ||
+      value.width !== undefined ||
+      value.height !== undefined,
     {
       message: "수정할 필드를 하나 이상 전달해야 합니다.",
     },
@@ -542,6 +572,8 @@ export const ApiExhibitionImageSchema = z
       description: "전시 세부 이미지 노출 순서",
       example: 0,
     }),
+    width: imageDimensionField("원본 이미지 가로 픽셀 (레거시 데이터는 null)", 3000),
+    height: imageDimensionField("원본 이미지 세로 픽셀 (레거시 데이터는 null)", 2000),
     createdAt: timestampField("세부 이미지 생성 시각", EXAMPLE_TIMESTAMP_MS),
     updatedAt: timestampField("세부 이미지 수정 시각", EXAMPLE_TIMESTAMP_MS),
   })
@@ -646,6 +678,8 @@ export const ApiCreateExhibitionImageSchema = z
       description: "세부 이미지 노출 순서(기본값 0)",
       example: 0,
     }),
+    width: imageDimensionInputField("원본 이미지 가로 픽셀", 3000),
+    height: imageDimensionInputField("원본 이미지 세로 픽셀", 2000),
   })
   .openapi("ApiCreateExhibitionImageInput");
 
@@ -659,6 +693,8 @@ export const ApiUpdateExhibitionImageSchema = z
       description: "수정할 세부 이미지 노출 순서",
       example: 1,
     }),
+    width: imageDimensionInputField("원본 이미지 가로 픽셀", 3000),
+    height: imageDimensionInputField("원본 이미지 세로 픽셀", 2000),
   })
   .strict()
   .openapi("ApiUpdateExhibitionImageInput");
@@ -682,10 +718,16 @@ const ApiUpdateExhibitionImageBatchItemSchema = z
       description: "수정할 세부 이미지 노출 순서",
       example: 1,
     }),
+    width: imageDimensionInputField("원본 이미지 가로 픽셀", 3000),
+    height: imageDimensionInputField("원본 이미지 세로 픽셀", 2000),
   })
   .strict()
   .refine(
-    (value) => value.imageUrl !== undefined || value.sortOrder !== undefined,
+    (value) =>
+      value.imageUrl !== undefined ||
+      value.sortOrder !== undefined ||
+      value.width !== undefined ||
+      value.height !== undefined,
     {
       message: "수정할 필드를 하나 이상 전달해야 합니다.",
     },

@@ -40,11 +40,21 @@ export type AuditLogEntity = {
   createdAt: Date;
 };
 
+/** 세부 이미지 쓰기 입력에 선택적으로 포함되는 원본 픽셀 크기 (측정 실패 시 생략) */
+export type ImageDimensionsInput = {
+  width?: number;
+  height?: number;
+};
+
 export type ActivityImageEntity = {
   id: string;
   activityId: string;
   imageUrl: string;
   sortOrder: number;
+  /** 업로드 시 측정한 원본 가로 픽셀 (측정 도입 전 레거시 행은 null) */
+  width: number | null;
+  /** 업로드 시 측정한 원본 세로 픽셀 (측정 도입 전 레거시 행은 null) */
+  height: number | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -68,6 +78,10 @@ export type ExhibitionImageEntity = {
   exhibitionId: string;
   imageUrl: string;
   sortOrder: number;
+  /** 업로드 시 측정한 원본 가로 픽셀 (측정 도입 전 레거시 행은 null) */
+  width: number | null;
+  /** 업로드 시 측정한 원본 세로 픽셀 (측정 도입 전 레거시 행은 null) */
+  height: number | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -311,24 +325,26 @@ export type DataService = {
   deleteActivity: (id: string) => Promise<boolean>;
   addActivityImage: (
     activityId: string,
-    input: { imageUrl: string; sortOrder: number },
+    input: ImageDimensionsInput & { imageUrl: string; sortOrder: number },
   ) => Promise<ActivityImageEntity | null>;
   addActivityImages: (
     activityId: string,
-    input: Array<{ imageUrl: string; sortOrder: number }>,
+    input: Array<ImageDimensionsInput & { imageUrl: string; sortOrder: number }>,
   ) => Promise<ActivityImageEntity[] | null>;
   updateActivityImage: (
     activityId: string,
     imageId: string,
-    input: Partial<{ imageUrl: string; sortOrder: number }>,
+    input: Partial<{ imageUrl: string; sortOrder: number }> & ImageDimensionsInput,
   ) => Promise<ActivityImageEntity | null>;
   updateActivityImages: (
     activityId: string,
-    input: Array<{
-      imageId: string;
-      imageUrl?: string;
-      sortOrder?: number;
-    }>,
+    input: Array<
+      ImageDimensionsInput & {
+        imageId: string;
+        imageUrl?: string;
+        sortOrder?: number;
+      }
+    >,
   ) => Promise<ActivityImageEntity[] | null>;
   deleteActivityImage: (activityId: string, imageId: string) => Promise<boolean>;
 
@@ -359,24 +375,26 @@ export type DataService = {
   deleteExhibition: (id: string) => Promise<boolean>;
   addExhibitionImage: (
     exhibitionId: string,
-    input: { imageUrl: string; sortOrder: number },
+    input: ImageDimensionsInput & { imageUrl: string; sortOrder: number },
   ) => Promise<ExhibitionImageEntity | null>;
   addExhibitionImages: (
     exhibitionId: string,
-    input: Array<{ imageUrl: string; sortOrder: number }>,
+    input: Array<ImageDimensionsInput & { imageUrl: string; sortOrder: number }>,
   ) => Promise<ExhibitionImageEntity[] | null>;
   updateExhibitionImage: (
     exhibitionId: string,
     imageId: string,
-    input: Partial<{ imageUrl: string; sortOrder: number }>,
+    input: Partial<{ imageUrl: string; sortOrder: number }> & ImageDimensionsInput,
   ) => Promise<ExhibitionImageEntity | null>;
   updateExhibitionImages: (
     exhibitionId: string,
-    input: Array<{
-      imageId: string;
-      imageUrl?: string;
-      sortOrder?: number;
-    }>,
+    input: Array<
+      ImageDimensionsInput & {
+        imageId: string;
+        imageUrl?: string;
+        sortOrder?: number;
+      }
+    >,
   ) => Promise<ExhibitionImageEntity[] | null>;
   deleteExhibitionImage: (
     exhibitionId: string,

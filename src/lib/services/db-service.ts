@@ -157,6 +157,13 @@ const toAuditActor = (input: {
 // inArray 목록은 고정 파라미터 여유분을 남기고 45개 단위로 쪼개 실행한다.
 const IN_ARRAY_CHUNK_SIZE = 45;
 
+// 세부 이미지 쓰기 입력의 원본 픽셀 크기를 부분 업데이트 객체로 변환한다.
+// 전달되지 않은 값은 기존 컬럼을 덮어쓰지 않도록 키 자체를 생략한다.
+const toImageDimensionsPatch = (input: { width?: number; height?: number }) => ({
+	...(input.width !== undefined ? { width: input.width } : {}),
+	...(input.height !== undefined ? { height: input.height } : {}),
+});
+
 const chunkArray = <T>(
 	items: readonly T[],
 	chunkSize: number = IN_ARRAY_CHUNK_SIZE,
@@ -1282,6 +1289,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 				activityId,
 				imageUrl: input.imageUrl,
 				sortOrder: input.sortOrder,
+				...toImageDimensionsPatch(input),
 			});
 			await db
 				.update(activities)
@@ -1319,9 +1327,16 @@ export const createDbDataService = (database: D1Database): DataService => {
 				createdIds.push(id);
 				return database
 					.prepare(
-						`insert into "activity_images" ("id", "activity_id", "image_url", "sort_order") values (?, ?, ?, ?)`,
+						`insert into "activity_images" ("id", "activity_id", "image_url", "sort_order", "width", "height") values (?, ?, ?, ?, ?, ?)`,
 					)
-					.bind(id, activityId, item.imageUrl, item.sortOrder);
+					.bind(
+						id,
+						activityId,
+						item.imageUrl,
+						item.sortOrder,
+						item.width ?? null,
+						item.height ?? null,
+					);
 			});
 
 			if (statements.length > 0) {
@@ -1376,6 +1391,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 					...(input.sortOrder !== undefined
 						? { sortOrder: input.sortOrder }
 						: {}),
+					...toImageDimensionsPatch(input),
 					updatedAt: new Date(),
 				})
 				.where(
@@ -1443,6 +1459,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 						...(item.sortOrder !== undefined
 							? { sortOrder: item.sortOrder }
 							: {}),
+						...toImageDimensionsPatch(item),
 						updatedAt: new Date(),
 					})
 					.where(
@@ -1676,6 +1693,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 				exhibitionId,
 				imageUrl: input.imageUrl,
 				sortOrder: input.sortOrder,
+				...toImageDimensionsPatch(input),
 			});
 			await db
 				.update(exhibitions)
@@ -1716,9 +1734,16 @@ export const createDbDataService = (database: D1Database): DataService => {
 				createdIds.push(id);
 				return database
 					.prepare(
-						`insert into "exhibition_images" ("id", "exhibition_id", "image_url", "sort_order") values (?, ?, ?, ?)`,
+						`insert into "exhibition_images" ("id", "exhibition_id", "image_url", "sort_order", "width", "height") values (?, ?, ?, ?, ?, ?)`,
 					)
-					.bind(id, exhibitionId, item.imageUrl, item.sortOrder);
+					.bind(
+						id,
+						exhibitionId,
+						item.imageUrl,
+						item.sortOrder,
+						item.width ?? null,
+						item.height ?? null,
+					);
 			});
 
 			if (statements.length > 0) {
@@ -1776,6 +1801,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 					...(input.sortOrder !== undefined
 						? { sortOrder: input.sortOrder }
 						: {}),
+					...toImageDimensionsPatch(input),
 					updatedAt: new Date(),
 				})
 				.where(
@@ -1846,6 +1872,7 @@ export const createDbDataService = (database: D1Database): DataService => {
 						...(item.sortOrder !== undefined
 							? { sortOrder: item.sortOrder }
 							: {}),
+						...toImageDimensionsPatch(item),
 						updatedAt: new Date(),
 					})
 					.where(

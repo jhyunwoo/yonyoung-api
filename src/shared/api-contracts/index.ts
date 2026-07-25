@@ -80,6 +80,10 @@ export type ApiActivityImage = {
   activityId: string;
   imageUrl: string;
   sortOrder: number;
+  /** 원본 이미지 가로 픽셀 (업로드 시 측정, 레거시 데이터는 null) */
+  width: number | null;
+  /** 원본 이미지 세로 픽셀 (업로드 시 측정, 레거시 데이터는 null) */
+  height: number | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -116,6 +120,10 @@ export type ApiListActivitiesQuery = {
 export type ApiCreateActivityImageInput = {
   imageUrl: string;
   sortOrder: number;
+  /** 원본 이미지 가로 픽셀 (선택, 측정 실패 시 생략) */
+  width?: number;
+  /** 원본 이미지 세로 픽셀 (선택, 측정 실패 시 생략) */
+  height?: number;
 };
 
 export type ApiUpdateActivityImageInput = Partial<ApiCreateActivityImageInput>;
@@ -124,6 +132,8 @@ export type ApiUpdateActivityImageBatchItemInput = {
   imageId: string;
   imageUrl?: string;
   sortOrder?: number;
+  width?: number;
+  height?: number;
 };
 
 export type ApiExhibitionImage = {
@@ -131,6 +141,10 @@ export type ApiExhibitionImage = {
   exhibitionId: string;
   imageUrl: string;
   sortOrder: number;
+  /** 원본 이미지 가로 픽셀 (업로드 시 측정, 레거시 데이터는 null) */
+  width: number | null;
+  /** 원본 이미지 세로 픽셀 (업로드 시 측정, 레거시 데이터는 null) */
+  height: number | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -169,6 +183,10 @@ export type ApiListExhibitionsQuery = {
 export type ApiCreateExhibitionImageInput = {
   imageUrl: string;
   sortOrder: number;
+  /** 원본 이미지 가로 픽셀 (선택, 측정 실패 시 생략) */
+  width?: number;
+  /** 원본 이미지 세로 픽셀 (선택, 측정 실패 시 생략) */
+  height?: number;
 };
 
 export type ApiUpdateExhibitionImageInput = Partial<ApiCreateExhibitionImageInput>;
@@ -177,6 +195,8 @@ export type ApiUpdateExhibitionImageBatchItemInput = {
   imageId: string;
   imageUrl?: string;
   sortOrder?: number;
+  width?: number;
+  height?: number;
 };
 
 /**
