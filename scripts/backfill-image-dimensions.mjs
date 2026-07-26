@@ -31,6 +31,9 @@ const TARGET_TABLES = ["activity_images", "exhibition_images"];
 const UPDATE_CHUNK_SIZE = 50;
 /** format=json 동시 요청 수 */
 const FETCH_CONCURRENCY = 8;
+/** 변환 실패 시 재시도 횟수 (큰 원본은 첫 변환이 실패할 수 있다) */
+const FETCH_MAX_ATTEMPTS = 3;
+const FETCH_RETRY_BASE_DELAY_MS = 1500;
 const UUID_PATTERN = /^[0-9a-fA-F-]{36}$/;
 
 const args = new Set(process.argv.slice(2));
@@ -80,10 +83,17 @@ const extractObjectPath = (imageUrl) => {
   return null;
 };
 
-const fetchDimensions = async (objectPath) => {
+const fetchDimensionsOnce = async (objectPath) => {
   const response = await fetch(`${cdnBaseUrl}/cdn-cgi/image/format=json/${objectPath}`);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
+  }
+
+  // 변환이 실패하면 Cloudflare가 JSON 대신 원본 이미지 바이트를 그대로 돌려준다.
+  // 용량이 큰 원본(10MB+)의 첫 변환에서 실제로 관측됐고 재시도하면 성공한다.
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("json")) {
+    throw new Error(`JSON이 아닌 응답(변환 실패): ${contentType}`);
   }
 
   // format=json 응답은 최상위에 결과 크기를, original에 원본 크기를 담는다.
@@ -95,6 +105,24 @@ const fetchDimensions = async (objectPath) => {
     throw new Error(`형식이 올바르지 않은 응답: ${JSON.stringify(payload)}`);
   }
   return { width, height };
+};
+
+/** 큰 원본은 첫 변환이 실패할 수 있어 지연을 두고 재시도한다 */
+const fetchDimensions = async (objectPath) => {
+  let lastError;
+  for (let attempt = 0; attempt < FETCH_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await fetchDimensionsOnce(objectPath);
+    } catch (error) {
+      lastError = error;
+      if (attempt < FETCH_MAX_ATTEMPTS - 1) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, FETCH_RETRY_BASE_DELAY_MS * (attempt + 1)),
+        );
+      }
+    }
+  }
+  throw lastError;
 };
 
 /** 동시 요청 수를 제한하면서 순서대로 결과를 모은다 */
