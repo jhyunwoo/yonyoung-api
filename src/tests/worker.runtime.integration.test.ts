@@ -45,7 +45,18 @@ describe("worker runtime integration", () => {
         checks: Array<{ service: string; status: string }>;
       };
       expect(body.status).toBe("healthy");
-      expect(body.checks).toEqual([]);
+      // 실제 런타임에서는 얕은 점검이 서비스별 결과를 채워야 한다.
+      expect(body.checks.length).toBeGreaterThan(0);
+      for (const service of ["d1", "r2", "r2_presign", "auth_config"]) {
+        expect(
+          body.checks.some(
+            (check) => check.service === service && check.status === "healthy",
+          ),
+        ).toBe(true);
+      }
+      // 공개 응답에는 바인딩 이름/상세가 포함되지 않아야 한다.
+      expect(JSON.stringify(body)).not.toContain('"binding"');
+      expect(JSON.stringify(body)).not.toContain('"detail"');
       expect(response.headers.get("x-request-id")).toBeTruthy();
       expect(response.headers.get("server-timing")).toContain("total;dur=");
     },

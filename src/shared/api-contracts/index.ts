@@ -454,6 +454,8 @@ export type ApiAdminDashboardStats = {
   r2StorageUsedBytes: number;
   r2StorageLimitBytes: number;
   r2StorageUsageAvailable: boolean;
+  r2StorageUsageReason: "ok" | "partial" | "binding_missing" | "scan_failed";
+  r2StorageObservedAt: string;
 };
 
 export type ApiPresignRequest = {

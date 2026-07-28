@@ -412,6 +412,42 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
       expect(issuePresignedPutUrl).not.toHaveBeenCalled();
     });
 
+    it(`${route.path}는 사용량 스캔이 불완전하면 500으로 업로드를 차단한다`, async () => {
+      const issuePresignedPutUrl = fn(async () => ({
+        uploadUrl: "https://upload.example.com/signed",
+        objectKey: "object-key",
+        publicUrl: "https://cdn.example.com/object-key",
+        requiredHeaders: { "Content-Type": "image/png" },
+      }));
+      const app = createTestApp({
+        actor: createActor(route.role, IDs.manager),
+        presignService: createPresignServiceMock({ issuePresignedPutUrl }),
+        // 부분 스캔 결과는 한도 미만처럼 보여도 신뢰할 수 없다.
+        readR2TotalUsageBytes: async () => ({
+          totalUsageBytes: 1024,
+          objectCount: 1,
+          pages: 1,
+          complete: false,
+          elapsedMs: 0,
+          observedAt: Date.now(),
+        }),
+      });
+
+      const response = await app.request(route.path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          fileName: "cover.png",
+          contentType: "image/png",
+          fileSize: 1024,
+        }),
+      });
+
+      expect(response.status).toBe(500);
+      await expectErrorCode(response, "INTERNAL_ERROR");
+      expect(issuePresignedPutUrl).not.toHaveBeenCalled();
+    });
+
     it(`${route.path}는 presign 서비스 예외 시 500을 반환한다`, /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
       const issuePresignedPutUrl = fn(
         /** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {

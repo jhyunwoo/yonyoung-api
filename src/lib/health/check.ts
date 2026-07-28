@@ -1,21 +1,47 @@
 import { createR2PresignService } from "../storage/presign";
 import { createD1ViewCountStore } from "../views/view-counts";
+import { resolveAuthRuntimeEnv } from "../config/runtime-env";
 import type { AppBindings } from "../../types/honoAppType";
 
 const DEFAULT_HEALTH_TIMEOUT_MS = 3_000;
 
+/**
+ * D1 마이그레이션이 적용되지 않은 데이터베이스를 탐지하기 위한 핵심 테이블 목록.
+ * 전체 테이블을 검사하지 않고 도메인별 대표 테이블만 확인한다.
+ */
+const CORE_D1_TABLES = [
+  "user",
+  "session",
+  "account",
+  "generations",
+  "activities",
+  "exhibitions",
+  "view_counts",
+  "attachments",
+  "upload_reservations",
+] as const;
+
+/**
+ * 공개 헬스 체크는 부작용 없는 검사만 수행하고, readiness는 쓰기 왕복까지 검증한다.
+ */
+export type HealthCheckDepth = "shallow" | "deep";
+
 type HealthCheckService =
   | "d1"
+  | "db_schema"
   | "view_counts"
   | "r2"
   | "r2_presign"
+  | "auth_config"
+  | "rate_limiter"
+  | "analytics_engine"
   | "durable_object"
   | "assets"
   | "service_binding";
 
 type HealthCheckStatus = "healthy" | "unhealthy" | "skipped";
 
-type HealthCheckResult = {
+export type HealthCheckResult = {
   service: HealthCheckService;
   binding: string;
   status: HealthCheckStatus;
@@ -24,7 +50,7 @@ type HealthCheckResult = {
   error?: string;
 };
 
-type HealthReport = {
+export type HealthReport = {
   status: "healthy" | "unhealthy";
   checkedAt: string;
   durationMs: number;
@@ -276,6 +302,7 @@ const runViewCountCheck = async (
 
 const runR2BucketChecks = async (
   env: Partial<AppBindings>,
+  depth: HealthCheckDepth,
 ): Promise<HealthCheckResult[]> => {
   const r2Bindings = collectBindings(env, isR2Bucket);
 
@@ -288,6 +315,22 @@ const runR2BucketChecks = async (
         detail: "R2 bucket binding이 구성되지 않았습니다.",
       },
     ];
+  }
+
+  // 공개 헬스 체크는 누구나 호출할 수 있으므로 버킷에 쓰기를 남기지 않는다.
+  if (depth === "shallow") {
+    return Promise.all(
+      r2Bindings.map((entry) =>
+        runTimedCheck({
+          service: "r2",
+          binding: entry.name,
+          detail: "R2 list 읽기 프로브로 스토리지 연결 상태를 확인합니다.",
+          probe: async () => {
+            await entry.binding.list({ limit: 1 });
+          },
+        }),
+      ),
+    );
   }
 
   return Promise.all(
@@ -311,6 +354,110 @@ const runR2BucketChecks = async (
       }),
     ),
   );
+};
+
+const runDbSchemaCheck = async (
+  env: Partial<AppBindings>,
+): Promise<HealthCheckResult> => {
+  const database = env.DB ?? env.db;
+  const binding = env.DB ? "DB" : "db";
+
+  if (!isD1Database(database)) {
+    return {
+      service: "db_schema",
+      binding,
+      status: "unhealthy",
+      detail: "스키마를 확인할 D1 binding이 구성되지 않았습니다.",
+    };
+  }
+
+  return runTimedCheck({
+    service: "db_schema",
+    binding,
+    detail: "핵심 테이블 존재 여부로 D1 마이그레이션 적용 상태를 확인합니다.",
+    probe: async () => {
+      const placeholders = CORE_D1_TABLES.map(() => "?").join(", ");
+      const found = await database
+        .prepare(
+          `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${placeholders})`,
+        )
+        .bind(...CORE_D1_TABLES)
+        .all<{ name: string }>();
+
+      const foundNames = new Set((found.results ?? []).map((row) => row.name));
+      const missing = CORE_D1_TABLES.filter((table) => !foundNames.has(table));
+      if (missing.length > 0) {
+        throw new Error(`missing D1 tables: ${missing.join(", ")}`);
+      }
+
+      return `핵심 테이블 ${CORE_D1_TABLES.length}개가 모두 존재합니다.`;
+    },
+  });
+};
+
+const runAuthConfigCheck = async (
+  env: Partial<AppBindings>,
+): Promise<HealthCheckResult> => {
+  return runTimedCheck({
+    service: "auth_config",
+    binding: "BETTER_AUTH_*",
+    detail: "better-auth 필수 환경 변수와 OAuth 설정을 확인합니다.",
+    probe: async () => {
+      // 개발용 기본값 없이 해석해 프로덕션 시크릿 누락을 실패로 처리한다.
+      const authEnv = resolveAuthRuntimeEnv(env, false);
+      if (authEnv.trustedOrigins.length === 0) {
+        throw new Error("no trusted origins configured");
+      }
+    },
+  });
+};
+
+const runRateLimiterCheck = async (
+  env: Partial<AppBindings>,
+): Promise<HealthCheckResult> => {
+  const limiter = env.PAGE_VIEW_RATE_LIMITER;
+
+  // wrangler.jsonc에 선언된 필수 바인딩이므로 부재는 skipped가 아닌 실패다.
+  if (!limiter || typeof limiter.limit !== "function") {
+    return {
+      service: "rate_limiter",
+      binding: "PAGE_VIEW_RATE_LIMITER",
+      status: "unhealthy",
+      detail: "조회수 rate limit binding이 구성되지 않았습니다.",
+    };
+  }
+
+  return runTimedCheck({
+    service: "rate_limiter",
+    binding: "PAGE_VIEW_RATE_LIMITER",
+    detail: "rate limit binding 호출 가능 여부를 확인합니다.",
+    probe: async () => {
+      // 허용/차단 결과와 무관하게 호출 자체가 성공하면 정상으로 판단한다.
+      await limiter.limit({ key: "__healthcheck__" });
+    },
+  });
+};
+
+const runAnalyticsEngineCheck = async (
+  env: Partial<AppBindings>,
+): Promise<HealthCheckResult> => {
+  const dataset = env.PERF_ANALYTICS;
+
+  if (!dataset || typeof dataset.writeDataPoint !== "function") {
+    return {
+      service: "analytics_engine",
+      binding: "PERF_ANALYTICS",
+      status: "unhealthy",
+      detail: "성능 분석 dataset binding이 구성되지 않았습니다.",
+    };
+  }
+
+  return {
+    service: "analytics_engine",
+    binding: "PERF_ANALYTICS",
+    status: "healthy",
+    detail: "성능 분석 dataset binding이 구성되어 있습니다.",
+  };
 };
 
 const runR2PresignCheck = async (
@@ -477,33 +624,77 @@ const summarizeChecks = (
   );
 };
 
+/**
+ * 공개 응답에서 binding 이름/점검 상세/에러 문자열을 제거한 형태.
+ * 인프라 구성을 외부에 노출하지 않으면서 서비스별 상태만 전달한다.
+ */
+export type PublicHealthCheckResult = {
+  service: HealthCheckService;
+  status: HealthCheckStatus;
+  latencyMs?: number;
+};
+
+export type PublicHealthReport = Omit<HealthReport, "checks"> & {
+  checks: PublicHealthCheckResult[];
+};
+
+export const toPublicHealthReport = (
+  report: HealthReport,
+): PublicHealthReport => {
+  return {
+    status: report.status,
+    checkedAt: report.checkedAt,
+    durationMs: report.durationMs,
+    summary: report.summary,
+    checks: report.checks.map((check) => ({
+      service: check.service,
+      status: check.status,
+      ...(check.latencyMs === undefined ? {} : { latencyMs: check.latencyMs }),
+    })),
+  };
+};
+
 export const runInfrastructureHealthChecks = async (
   env: Partial<AppBindings> | undefined,
+  options: { depth?: HealthCheckDepth } = {},
 ): Promise<HealthReport> => {
   const startedAt = performance.now();
   const runtimeEnv = env ?? {};
+  const depth = options.depth ?? "deep";
 
   const [
     d1Checks,
-    viewCountCheck,
     r2BucketChecks,
     r2PresignCheck,
+    authConfigCheck,
+    rateLimiterCheck,
+    analyticsEngineCheck,
     durableObjectChecks,
     fetcherBindingChecks,
+    // 쓰기 왕복 검사는 readiness에서만 수행한다.
+    deepChecks,
   ] = await Promise.all([
     runD1Checks(runtimeEnv),
-    runViewCountCheck(runtimeEnv),
-    runR2BucketChecks(runtimeEnv),
+    runR2BucketChecks(runtimeEnv, depth),
     runR2PresignCheck(runtimeEnv),
+    runAuthConfigCheck(runtimeEnv),
+    runRateLimiterCheck(runtimeEnv),
+    runAnalyticsEngineCheck(runtimeEnv),
     runDurableObjectChecks(runtimeEnv),
     runFetcherBindingChecks(runtimeEnv),
+    depth === "deep"
+      ? Promise.all([runDbSchemaCheck(runtimeEnv), runViewCountCheck(runtimeEnv)])
+      : Promise.resolve<HealthCheckResult[]>([]),
   ]);
 
   const checks = [
     ...d1Checks,
-    viewCountCheck,
+    ...deepChecks,
     ...r2BucketChecks,
     r2PresignCheck,
+    authConfigCheck,
+    rateLimiterCheck,
+    analyticsEngineCheck,
     ...durableObjectChecks,
     ...fetcherBindingChecks,
   ];

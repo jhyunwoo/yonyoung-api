@@ -54,6 +54,12 @@ const createHealthyEnv = (): Partial<AppBindings> & Record<string, unknown> => {
       delete: async (key: string) => {
         objects.delete(key);
       },
+      list: async () =>
+        ({
+          objects: [],
+          truncated: false,
+          delimitedPrefixes: [],
+        }) as unknown as R2Objects,
     } as unknown as R2Bucket,
     CHAT_ROOM_DO: {
       idFromName: () => ({}) as DurableObjectId,
@@ -66,6 +72,12 @@ const createHealthyEnv = (): Partial<AppBindings> & Record<string, unknown> => {
     NOTIFIER_SERVICE: {
       fetch: async () => new Response(null, { status: 204 }),
     } as unknown as Fetcher,
+    PAGE_VIEW_RATE_LIMITER: {
+      limit: async () => ({ success: true }),
+    } as unknown as RateLimit,
+    PERF_ANALYTICS: {
+      writeDataPoint: () => undefined,
+    } as unknown as AnalyticsEngineDataset,
     R2_S3_ENDPOINT: "https://example-account.r2.cloudflarestorage.com",
     R2_ACCESS_KEY_ID: "key",
     R2_SECRET_ACCESS_KEY: "secret",
@@ -73,7 +85,10 @@ const createHealthyEnv = (): Partial<AppBindings> & Record<string, unknown> => {
     R2_PUBLIC_URL_SIGNING_SECRET:
       "test-public-url-signing-secret-at-least-32-chars",
     BETTER_AUTH_URL: "https://app.example.com",
+    BETTER_AUTH_TRUSTED_ORIGINS: "https://app.example.com",
     BETTER_AUTH_SECRET: "test-better-auth-secret-with-at-least-32-chars",
+    GOOGLE_CLIENT_ID: "test-google-client-id",
+    GOOGLE_CLIENT_SECRET: "test-google-client-secret",
   };
 };
 

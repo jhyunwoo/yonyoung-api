@@ -1756,6 +1756,17 @@ export const ApiAdminDashboardStatsSchema = z
         "R2 사용량 조회 성공 여부. false면 사용량 수치는 표시용 기본값일 수 있습니다.",
       example: true,
     }),
+    r2StorageUsageReason: z
+      .enum(["ok", "partial", "binding_missing", "scan_failed"])
+      .openapi({
+        description:
+          "R2 사용량 조회 결과 사유. `partial`은 스캔 예산 초과로 합계가 하한값임을, `binding_missing`/`scan_failed`는 조회 실패를 의미합니다.",
+        example: "ok",
+      }),
+    r2StorageObservedAt: z.string().openapi({
+      description: "R2 사용량을 관측한 시각(ISO 8601). 캐시된 값이면 캐시 생성 시각입니다.",
+      example: "2026-07-27T11:03:19.265Z",
+    }),
   })
   .openapi("ApiAdminDashboardStats");
 

@@ -48,8 +48,12 @@ describe("dashboard routes", () => {
         r2StorageUsedBytes: number;
         r2StorageLimitBytes: number;
         r2StorageUsageAvailable: boolean;
+        r2StorageUsageReason: string;
+        r2StorageObservedAt: string;
       };
     }>(response);
+    expect(body.data.r2StorageUsageReason).toBe("ok");
+    expect(Number.isNaN(Date.parse(body.data.r2StorageObservedAt))).toBe(false);
     expect(body.data.usersTotal).toBe(21);
     expect(body.data.selectedGenerationMembersTotal).toBe(9);
     expect(body.data.r2StorageUsedBytes).toBe(3 * 1024 * 1024 * 1024);
@@ -87,11 +91,87 @@ describe("dashboard routes", () => {
         r2StorageUsedBytes: number;
         r2StorageLimitBytes: number;
         r2StorageUsageAvailable: boolean;
+        r2StorageUsageReason: string;
       };
     }>(response);
     expect(body.data.r2StorageUsedBytes).toBe(0);
     expect(body.data.r2StorageLimitBytes).toBe(10 * 1024 * 1024 * 1024);
     expect(body.data.r2StorageUsageAvailable).toBe(false);
+    expect(body.data.r2StorageUsageReason).toBe("scan_failed");
+  });
+
+  it("GET /api/admin/dashboard는 R2 바인딩이 없어도 200과 binding_missing 사유를 반환한다", async () => {
+    const app = createTestApp({
+      actor: createActor("manager", IDs.manager),
+      dataService: createDataServiceMock({
+        getAdminDashboardStats: fn(async () => ({
+          usersTotal: 1,
+          unverifiedUsersTotal: 0,
+          generationsTotal: 0,
+          selectedGenerationMembersTotal: 0,
+          selectedGenerationActivitiesTotal: 0,
+          selectedGenerationExhibitionsTotal: 0,
+          linktreeLinksTotal: 0,
+        })),
+      }),
+    });
+
+    const response = await app.request("/api/admin/dashboard", undefined, {
+      r2: undefined,
+      R2: undefined,
+    });
+
+    expect(response.status).toBe(200);
+    const body = await readJson<{
+      data: {
+        r2StorageUsedBytes: number;
+        r2StorageUsageAvailable: boolean;
+        r2StorageUsageReason: string;
+      };
+    }>(response);
+    expect(body.data.r2StorageUsedBytes).toBe(0);
+    expect(body.data.r2StorageUsageAvailable).toBe(false);
+    expect(body.data.r2StorageUsageReason).toBe("binding_missing");
+  });
+
+  it("GET /api/admin/dashboard는 부분 스캔 결과를 partial로 표시한다", async () => {
+    const app = createTestApp({
+      actor: createActor("manager", IDs.manager),
+      dataService: createDataServiceMock({
+        getAdminDashboardStats: fn(async () => ({
+          usersTotal: 1,
+          unverifiedUsersTotal: 0,
+          generationsTotal: 0,
+          selectedGenerationMembersTotal: 0,
+          selectedGenerationActivitiesTotal: 0,
+          selectedGenerationExhibitionsTotal: 0,
+          linktreeLinksTotal: 0,
+        })),
+      }),
+    });
+
+    const response = await app.request("/api/admin/dashboard", undefined, {
+      r2: {
+        // truncated인데 커서가 없어 스캔이 완주하지 못하는 상황.
+        list: vi.fn(async () => ({
+          objects: [{ size: 1024 }],
+          truncated: true,
+          cursor: undefined,
+        })),
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await readJson<{
+      data: {
+        r2StorageUsedBytes: number;
+        r2StorageUsageAvailable: boolean;
+        r2StorageUsageReason: string;
+      };
+    }>(response);
+    expect(body.data.r2StorageUsedBytes).toBe(1024);
+    expect(body.data.r2StorageUsageAvailable).toBe(false);
+    expect(body.data.r2StorageUsageReason).toBe("partial");
   });
 
   it("GET /api/admin/dashboard는 잘못된 쿼리에 400을 반환한다", async () => {

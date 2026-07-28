@@ -169,7 +169,14 @@ const createTestApp = (input: {
      * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
      */
     getPresignService: () => input.presignService ?? createPresignServiceMock(),
-    readR2TotalUsageBytes: async () => 0,
+    readR2TotalUsageBytes: async () => ({
+      totalUsageBytes: 0,
+      objectCount: 0,
+      pages: 1,
+      complete: true,
+      elapsedMs: 0,
+      observedAt: Date.now(),
+    }),
     getUploadReservationStore: () => uploadReservationStore,
   });
 };

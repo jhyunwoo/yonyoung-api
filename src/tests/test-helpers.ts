@@ -19,6 +19,7 @@ import type {
   UserEntity,
 } from "../lib/services/types";
 import type { OpenAPIDocument } from "../lib/openapi/merge";
+import type { R2UsageScanResult } from "../lib/storage/usage";
 import type {
   ViewCountStore,
 } from "../lib/views/view-counts";
@@ -400,12 +401,33 @@ const defaultAuthOpenApiSchema: OpenAPIDocument = {
  * @returns 처리 결과 값을 반환합니다.
  * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
  */
+/** 테스트에서 사용량을 숫자로만 지정해도 되도록 완전한 스캔 결과로 감싼다. */
+export const toUsageScanResult = (
+  value: number | R2UsageScanResult,
+): R2UsageScanResult => {
+  if (typeof value !== "number") {
+    return value;
+  }
+
+  return {
+    totalUsageBytes: value,
+    objectCount: 0,
+    pages: 1,
+    complete: true,
+    elapsedMs: 0,
+    observedAt: Date.now(),
+  };
+};
+
 export const createTestApp = (input: {
   actor: Actor | null;
   resolveActor?: () => Promise<Actor | null>;
   dataService?: DataService;
   presignService?: PresignService;
-  readR2TotalUsageBytes?: () => Promise<number> | number;
+  readR2TotalUsageBytes?: () =>
+    | Promise<number | R2UsageScanResult>
+    | number
+    | R2UsageScanResult;
   getAuthOpenApiSchema?: () => Promise<OpenAPIDocument>;
   isDocsEnabled?: boolean;
   viewCountStore?: ViewCountStore;
@@ -442,9 +464,11 @@ export const createTestApp = (input: {
      */
     getPresignService: () => input.presignService ?? createPresignServiceMock(),
     readR2TotalUsageBytes: async () =>
-      input.readR2TotalUsageBytes === undefined
-        ? 0
-        : await input.readR2TotalUsageBytes(),
+      toUsageScanResult(
+        input.readR2TotalUsageBytes === undefined
+          ? 0
+          : await input.readR2TotalUsageBytes(),
+      ),
     getAuthOpenApiSchema:
       input.getAuthOpenApiSchema ??
       /** createApp 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ (async () =>

@@ -231,6 +231,77 @@
         background: #fff8f0;
       }
 
+      .check-list {
+        margin: 16px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 6px;
+      }
+
+      .check-list:empty {
+        display: none;
+      }
+
+      .check-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border: 1px solid var(--surface-border);
+        background: var(--bg-secondary);
+        padding: 10px 12px;
+      }
+
+      .check-name {
+        font-size: 0.9rem;
+        font-weight: 600;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        word-break: break-all;
+      }
+
+      .check-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+
+      .check-latency {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .check-state {
+        min-width: 92px;
+        padding: 4px 8px;
+        border: 1px solid var(--surface-strong-border);
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        text-align: center;
+      }
+
+      .check-state[data-state="healthy"] {
+        color: var(--ok);
+        border-color: color-mix(in srgb, var(--ok) 50%, #ffffff);
+        background: #f0faf6;
+      }
+
+      .check-state[data-state="unhealthy"] {
+        color: var(--error);
+        border-color: color-mix(in srgb, var(--error) 54%, #ffffff);
+        background: #fff4f4;
+      }
+
+      .check-state[data-state="skipped"] {
+        color: var(--text-muted);
+        border-color: var(--surface-border);
+        background: var(--bg-primary);
+      }
+
       .status-meta {
         margin: 14px 0 0;
         display: grid;
@@ -391,6 +462,8 @@
           </dl>
         </div>
 
+        <ul id="health-checks" class="check-list" aria-live="polite"></ul>
+
         <div class="status-meta">
           <p id="health-checked-at" class="meta-row">체크 시각: -</p>
           <p id="health-last-updated" class="meta-row">마지막 갱신: -</p>
@@ -435,6 +508,7 @@
         const healthDuration = document.getElementById("health-duration");
         const healthCheckedAt = document.getElementById("health-checked-at");
         const healthLastUpdated = document.getElementById("health-last-updated");
+        const healthChecks = document.getElementById("health-checks");
 
         const healthContainer = document.querySelector("[data-health-endpoint]");
         const healthEndpoint =
@@ -498,6 +572,55 @@
           if (healthSkipped) healthSkipped.textContent = "-";
           if (healthDuration) healthDuration.textContent = "-";
           if (healthCheckedAt) healthCheckedAt.textContent = "체크 시각: -";
+          if (healthChecks) healthChecks.replaceChildren();
+        };
+
+        const renderChecks = (checks) => {
+          if (!healthChecks) {
+            return;
+          }
+
+          if (!Array.isArray(checks) || checks.length === 0) {
+            healthChecks.replaceChildren();
+            return;
+          }
+
+          const rows = checks.map((check) => {
+            const row = document.createElement("li");
+            row.className = "check-row";
+
+            const name = document.createElement("span");
+            name.className = "check-name";
+            name.textContent =
+              typeof check.service === "string" ? check.service : "unknown";
+
+            const right = document.createElement("div");
+            right.className = "check-right";
+
+            if (typeof check.latencyMs === "number") {
+              const latency = document.createElement("span");
+              latency.className = "check-latency";
+              latency.textContent = `${check.latencyMs} ms`;
+              right.append(latency);
+            }
+
+            const state = document.createElement("span");
+            state.className = "check-state";
+            const status =
+              check.status === "healthy" ||
+              check.status === "unhealthy" ||
+              check.status === "skipped"
+                ? check.status
+                : "skipped";
+            state.dataset.state = status;
+            state.textContent = status.toUpperCase();
+            right.append(state);
+
+            row.append(name, right);
+            return row;
+          });
+
+          healthChecks.replaceChildren(...rows);
         };
 
         const isHealthResponse = (value) => {
@@ -519,15 +642,24 @@
         };
 
         const renderHealth = (report) => {
-          const status = report.status === "healthy" ? "healthy" : "unhealthy";
+          // 실행된 체크가 하나도 없으면 healthy로 볼 근거가 없다.
+          const hasChecks = report.summary.total > 0;
+          const status = !hasChecks
+            ? "unknown"
+            : report.status === "healthy"
+              ? "healthy"
+              : "unhealthy";
           setOverallState(status);
 
           if (healthSummaryText) {
-            healthSummaryText.textContent =
-              status === "healthy"
+            healthSummaryText.textContent = !hasChecks
+              ? "실행된 인프라 체크가 없습니다. 헬스 체크 구성을 확인해주세요."
+              : status === "healthy"
                 ? "모든 필수 체크가 정상입니다."
                 : "일부 인프라 체크가 실패했습니다. 상세 로그를 확인해주세요.";
           }
+
+          renderChecks(report.checks);
 
           if (healthTotal) healthTotal.textContent = String(report.summary.total);
           if (healthHealthy) healthHealthy.textContent = String(report.summary.healthy);

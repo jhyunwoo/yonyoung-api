@@ -18,6 +18,7 @@ import { requireActor } from "../lib/http/authz";
 import { can, isMemberLikeRole } from "../lib/authorization/policy";
 import type { Actor, Resource, Role } from "../lib/authorization/types";
 import { MissingStorageConfigError } from "../lib/storage/presign";
+import { invalidateR2UsageCache } from "../lib/storage/usage";
 import {
   createdResponse,
   dataResponse,
@@ -166,7 +167,17 @@ const reserveStorageCapacityBeforeUpload = async (input: {
   const observedAt = Date.now();
   let observedUsedBytes: number;
   try {
-    observedUsedBytes = await input.dependencies.readR2TotalUsageBytes(input.c);
+    const usageScan = await input.dependencies.readR2TotalUsageBytes(input.c);
+    // 부분 스캔 합계는 실제 사용량의 하한값이므로 한도 판정에 쓸 수 없다.
+    if (!usageScan.complete) {
+      return {
+        response: internalError(
+          input.c,
+          "버킷 저장공간 사용량을 모두 확인하지 못해 업로드를 차단했습니다.",
+        ),
+      };
+    }
+    observedUsedBytes = usageScan.totalUsageBytes;
   } catch {
     return {
       response: internalError(
@@ -232,6 +243,7 @@ const releaseUploadReservation = async (
 const settleUploadReservation = async (
   store: UploadReservationStore,
   reservationId: string,
+  c?: Parameters<typeof badRequest>[0],
 ): Promise<void> => {
   await store
     .settle(
@@ -239,6 +251,30 @@ const settleUploadReservation = async (
       Date.now() + UPLOAD_RESERVATION_SETTLEMENT_GRACE_MS,
     )
     .catch(() => undefined);
+
+  // 정산은 업로드가 실제로 용량을 소비했다는 뜻이므로 캐시된 사용량을 버린다.
+  // 캐시 무효화 실패가 정산 응답을 깨뜨려서는 안 된다.
+  if (c) {
+    try {
+      await invalidateR2UsageCache({
+        bucketName: c.env?.R2_BUCKET,
+        waitUntil: resolveWaitUntil(c),
+      });
+    } catch {
+      // 무시한다.
+    }
+  }
+};
+
+const resolveWaitUntil = (
+  c: Parameters<typeof badRequest>[0],
+): ((promise: Promise<unknown>) => void) | undefined => {
+  try {
+    const executionCtx = c.executionCtx;
+    return executionCtx?.waitUntil?.bind(executionCtx);
+  } catch {
+    return undefined;
+  }
 };
 
 const isUserProfileUploadAllowed = (role: Role): boolean => {
@@ -463,7 +499,11 @@ const readActiveMultipartState = async (input: {
         const reservationStore =
           input.dependencies.getUploadReservationStore(input.c);
         if (terminalStateIsAmbiguous) {
-          await settleUploadReservation(reservationStore, state.reservationId);
+          await settleUploadReservation(
+            reservationStore,
+            state.reservationId,
+            input.c,
+          );
         } else {
           await reservationStore
             .remove(state.reservationId)
@@ -1164,6 +1204,7 @@ export const registerUploadRoutes = (
           await settleUploadReservation(
             dependencies.getUploadReservationStore(c),
             activeState.state.reservationId,
+            c,
           );
         }
         return badRequest(c, "멀티파트 업로드가 이미 종료되었거나 만료되었습니다.");
@@ -1173,6 +1214,7 @@ export const registerUploadRoutes = (
         await settleUploadReservation(
           dependencies.getUploadReservationStore(c),
           activeState.state.reservationId,
+          c,
         );
       }
       return ok(c, data);
@@ -1229,6 +1271,7 @@ export const registerUploadRoutes = (
           await settleUploadReservation(
             reservationStore,
             activeState.state.reservationId,
+            c,
           );
         } else {
           await reservationStore

@@ -877,20 +877,52 @@ const internalOperationSpecs: Record<string, OperationDocSpec> = {
     permission: ["공개 엔드포인트입니다."],
   }),
   getHealth: mkSpec({
-    summary: "시스템 인프라 헬스 체크",
+    summary: "공개 인프라 헬스 체크",
     overview:
-      "D1, R2, Durable Object, ASSETS 등 Cloudflare 의존 서비스 상태를 점검한 종합 결과를 반환합니다.",
+      "D1, R2, 인증 설정, rate limit 등 필수 의존성을 부작용 없이 점검한 요약 결과를 반환합니다.",
     parameters: ["파라미터를 사용하지 않습니다."],
     requestBody: ["요청 본문은 사용하지 않습니다."],
     internalFlow: [
-      "D1 쿼리, R2 put/head/delete, R2 presign 생성, Durable Object/ASSETS 바인딩 점검을 수행합니다.",
-      "각 체크 결과를 집계해 전체 상태를 계산하고 JSON으로 반환합니다.",
+      "쓰기 없는 shallow 점검만 수행합니다: D1 `SELECT 1`, R2 `list` 읽기, R2 presign 서명 생성, 인증 환경 변수 검증, rate limit/Analytics Engine 바인딩 확인, ASSETS/Service binding fetch.",
+      "공개 응답에서는 binding 이름, 점검 상세, 에러 문자열을 제거하고 서비스명/상태/지연시간만 노출합니다.",
+      "공개 엔드포인트 남용을 막기 위해 결과를 isolate 단위로 최대 10초 재사용합니다.",
     ],
     responseGuide: [
       "`200`: 모든 필수 체크가 `healthy`인 경우 헬스 체크 JSON을 반환합니다.",
-      "`503`: 하나 이상의 체크가 `unhealthy`인 경우 헬스 체크 JSON을 반환합니다.",
+      "`503`: 하나 이상의 체크가 `unhealthy`인 경우 동일한 형식의 JSON을 반환합니다.",
     ],
-    errorGuide: ["체크 실패 시에도 가능한 한 실패 원인을 포함한 JSON을 반환합니다."],
+    errorGuide: [
+      "실패 원인 상세는 노출하지 않습니다. 원인 확인은 `/api/health/readiness`를 사용하세요.",
+    ],
+    permission: ["공개 엔드포인트입니다."],
+  }),
+  getReadiness: mkSpec({
+    summary: "상세 인프라 readiness 점검",
+    overview:
+      "공개 헬스 체크 항목에 더해 D1 조회수 기록 왕복, R2 put/head/delete 왕복, D1 스키마 존재 여부까지 검증한 상세 결과를 반환합니다.",
+    parameters: ["파라미터를 사용하지 않습니다."],
+    requestBody: ["요청 본문은 사용하지 않습니다."],
+    internalFlow: [
+      "세션을 확인하고 관리자 페이지 접근 가능한 역할인지 검사합니다.",
+      "deep 점검을 수행해 binding 이름/점검 상세/실패 원인을 포함한 결과를 반환합니다.",
+    ],
+    responseGuide: [
+      "`200`: 모든 필수 체크가 `healthy`인 경우 상세 헬스 체크 JSON을 반환합니다.",
+      "`503`: 하나 이상의 체크가 `unhealthy`인 경우 동일한 형식의 JSON을 반환합니다.",
+    ],
+    errorGuide: [
+      "체크 실패 시에도 가능한 한 실패 원인(`error`)을 포함한 JSON을 반환합니다.",
+    ],
+    permission: ["관리자 페이지 접근 역할 필요"],
+  }),
+  getStatus: mkSpec({
+    summary: "API 메타 정보 조회",
+    overview: "API 이름, 배포 버전, 서버 시각을 반환합니다.",
+    parameters: ["파라미터를 사용하지 않습니다."],
+    requestBody: ["요청 본문은 사용하지 않습니다."],
+    internalFlow: ["package.json 버전과 현재 시각을 조합해 반환합니다."],
+    responseGuide: ["`200`: API 메타 정보 JSON 반환"],
+    errorGuide: ["비즈니스 오류를 반환하지 않습니다."],
     permission: ["공개 엔드포인트입니다."],
   }),
 };

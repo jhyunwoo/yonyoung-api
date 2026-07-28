@@ -22,11 +22,12 @@ describe("docs and system routes", /** describe 실행 과정에서 필요한 �
     await expectErrorCode(response, "INTERNAL_ERROR");
   });
 
-  it("/health는 binding 점검 없이 얕은 liveness 결과만 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("/health는 실제 얕은 점검 결과를 서비스 단위로만 공개한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
     const app = createTestApp({ actor: null, isDocsEnabled: true });
 
     const response = await app.request("/health");
-    expect(response.status).toBe(200);
+    // 테스트 앱에는 바인딩이 없으므로 실제 점검은 실패해야 정상이다.
+    expect(response.status).toBe(503);
     expect(response.headers.get("server-timing")).toContain("total;dur=");
     expect(response.headers.get("x-response-time")).toMatch(/ms$/);
     expect(response.headers.get("cache-control")).toBe(
@@ -36,7 +37,7 @@ describe("docs and system routes", /** describe 실행 과정에서 필요한 �
       status: string;
       checkedAt: string;
       durationMs: number;
-      checks: unknown[];
+      checks: Array<Record<string, unknown>>;
       summary: {
         total: number;
         healthy: number;
@@ -44,24 +45,25 @@ describe("docs and system routes", /** describe 실행 과정에서 필요한 �
         skipped: number;
       };
     }>(response);
-    expect(body.status).toBe("healthy");
+    expect(body.status).toBe("unhealthy");
     expect(Number.isNaN(Date.parse(body.checkedAt))).toBe(false);
-    expect(body.durationMs).toBe(0);
-    expect(body.summary).toEqual({
-      total: 0,
-      healthy: 0,
-      unhealthy: 0,
-      skipped: 0,
-    });
-    expect(body.checks).toEqual([]);
+    expect(body.summary.total).toBeGreaterThan(0);
+    expect(body.summary.unhealthy).toBeGreaterThan(0);
+    expect(body.checks.length).toBe(body.summary.total);
+    for (const check of body.checks) {
+      expect(Object.keys(check).sort()).toEqual(
+        expect.arrayContaining(["service", "status"]),
+      );
+    }
     expect(JSON.stringify(body)).not.toContain('"binding"');
     expect(JSON.stringify(body)).not.toContain('"detail"');
+    expect(JSON.stringify(body)).not.toContain('"error"');
   });
 
-  it("/는 API 메타 정보를 JSON으로 반환한다", async () => {
+  it("/api/status는 API 메타 정보를 JSON으로 반환한다", async () => {
     const app = createTestApp({ actor: null, isDocsEnabled: true });
 
-    const response = await app.request("/");
+    const response = await app.request("/api/status");
     expect(response.status).toBe(200);
 
     const body = await readJson<{

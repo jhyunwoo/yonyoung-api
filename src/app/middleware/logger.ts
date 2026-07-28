@@ -203,16 +203,19 @@ export const logError = (
     executionCtx?: WaitUntilContext;
   },
   error: unknown,
+  context?: Record<string, unknown> & { event?: string },
 ) => {
   const message = error instanceof Error ? error.message : String(error);
+  const { event, ...extra } = context ?? {};
 
   enqueueLog(c, () => {
     logger.error({
-      event: "request.failed",
+      event: event ?? "request.failed",
       requestId: readRequestId(c),
       method: c.req.method,
       route: c.req.path,
       message,
+      ...extra,
     });
   });
 };

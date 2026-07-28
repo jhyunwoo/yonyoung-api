@@ -42,6 +42,12 @@ const createMockD1PreparedStatement = (
       return createMockD1Result<T>();
     },
     all: async <T = Record<string, unknown>>() => {
+      // 스키마 헬스 체크는 조회한 테이블이 모두 존재한다고 가정한다.
+      if (normalizedQuery.includes("from sqlite_master")) {
+        const rows = (boundValues as string[]).map((name) => ({ name }));
+        return createMockD1Result(rows as T[]);
+      }
+
       if (normalizedQuery.includes("from view_counts")) {
         const [resourceType, ...resourceIds] = boundValues as string[];
         const results = resourceIds
@@ -132,15 +138,25 @@ export const createMockR2Bucket = (): R2Bucket => {
     delete: async (key: string) => {
       store.delete(key);
     },
-    list: async (_options?: R2ListOptions) => {
-      const objects = Array.from(store.entries()).map(([key, value]) => ({
-        key,
-        size: value.length,
-      })) as R2Object[];
+    // 커서/limit을 실제로 처리해 페이지네이션 경로를 재현한다.
+    list: async (options?: R2ListOptions) => {
+      const entries = Array.from(store.entries())
+        .map(([key, value]) => ({ key, size: value.length }))
+        .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+
+      const cursor = options?.cursor;
+      const startIndex = cursor
+        ? entries.findIndex((entry) => entry.key > cursor)
+        : 0;
+      const from = startIndex < 0 ? entries.length : startIndex;
+      const limit = options?.limit ?? 1000;
+      const page = entries.slice(from, from + limit);
+      const truncated = from + limit < entries.length;
 
       return {
-        objects,
-        truncated: false,
+        objects: page as R2Object[],
+        truncated,
+        ...(truncated ? { cursor: page.at(-1)?.key } : {}),
         delimitedPrefixes: [],
       } as R2Objects;
     },
@@ -186,6 +202,12 @@ export const createHealthyBindings = (): AppBindings => {
     r2: createMockR2Bucket(),
     R2: createMockR2Bucket(),
     ASSETS: createMockAssetsFetcher(),
+    PAGE_VIEW_RATE_LIMITER: {
+      limit: async () => ({ success: true }),
+    } as unknown as RateLimit,
+    PERF_ANALYTICS: {
+      writeDataPoint: () => undefined,
+    } as unknown as AnalyticsEngineDataset,
     R2_S3_ENDPOINT: "https://example-account.r2.cloudflarestorage.com",
     R2_ACCESS_KEY_ID: "key",
     R2_SECRET_ACCESS_KEY: "secret",
@@ -196,5 +218,7 @@ export const createHealthyBindings = (): AppBindings => {
     BETTER_AUTH_URL: "https://api.example.com",
     BETTER_AUTH_TRUSTED_ORIGINS: "https://app.example.com",
     BETTER_AUTH_SECRET: "test-better-auth-secret-with-at-least-32-chars",
+    GOOGLE_CLIENT_ID: "test-google-client-id",
+    GOOGLE_CLIENT_SECRET: "test-google-client-secret",
   } as AppBindings;
 };

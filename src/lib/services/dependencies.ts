@@ -13,7 +13,10 @@ import { getDbDataService } from "../db/factory";
 import { resolveDocsEnabled } from "../config/runtime-env";
 import { createD1SequentialSession, resolveD1SessionMode } from "../db/d1-session";
 import { createRetryingD1Database } from "../db/d1-client";
-import { readR2TotalUsageBytes } from "../storage/usage";
+import {
+  readR2TotalUsageBytesCached,
+  type R2UsageScanResult,
+} from "../storage/usage";
 import {
   createD1ViewCountStore,
   type ViewCountStore,
@@ -37,7 +40,7 @@ export type GetPresignService = (c: Context<HonoAppType>) => PresignService;
 
 export type ReadR2TotalUsageBytes = (
   c: Context<HonoAppType>,
-) => Promise<number>;
+) => Promise<R2UsageScanResult>;
 
 export type GetAuthOpenApiSchema = (
   c: Context<HonoAppType>,
@@ -65,6 +68,9 @@ export type AppDependencies = {
     c: Context<HonoAppType>,
   ) => UploadReservationStore;
 };
+
+// 업로드 예약이 사용하는 관측 신선도 창(30초)보다 짧게 유지한다.
+const UPLOAD_USAGE_CACHE_TTL_SECONDS = 15;
 
 const createRequestDatabase = (c: Context<HonoAppType>) => {
   const database = resolveD1Database(c.env);
@@ -98,7 +104,13 @@ export const createDefaultDependencies = (): AppDependencies => ({
     return dataService;
   },
   getPresignService: (c) => createR2PresignService(c.env),
-  readR2TotalUsageBytes: (c) => readR2TotalUsageBytes(resolveR2Bucket(c.env)),
+  // 업로드마다 전체 버킷을 다시 스캔하지 않도록 짧은 TTL 캐시를 사용한다.
+  // 실제 한도 집행은 활성 예약 합계를 더하는 D1 트리거가 담당한다.
+  readR2TotalUsageBytes: (c) =>
+    readR2TotalUsageBytesCached(resolveR2Bucket(c.env), {
+      ttlSeconds: UPLOAD_USAGE_CACHE_TTL_SECONDS,
+      bucketName: c.env.R2_BUCKET,
+    }),
   getViewCountStore: (c) => createD1ViewCountStore(createRequestDatabase(c)),
   allowPageViewWrite: async (c) => {
     const limiter = c.env.PAGE_VIEW_RATE_LIMITER;

@@ -14,6 +14,7 @@ import {
   R2_STORAGE_LIMIT_BYTES,
 } from "../lib/storage/usage";
 import { resolveR2Bucket } from "../infra/r2/client";
+import { logError } from "../middlewares/logger";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -33,6 +34,71 @@ const getAdminDashboardStatsRoute = createRoute({
     403: errorResponses[403],
   },
 });
+
+type R2StorageUsageReason = "ok" | "partial" | "binding_missing" | "scan_failed";
+
+type R2StorageUsageSnapshot = {
+  usedBytes: number;
+  reason: R2StorageUsageReason;
+  observedAt: string;
+};
+
+/**
+ * R2 사용량을 조회하고, 실패해도 200을 유지하도록 사유와 함께 강등한다.
+ * 바인딩 부재는 `resolveR2Bucket`이 동기 throw를 하므로 반드시 try 안에서 호출한다.
+ */
+const readR2StorageUsage = async (
+  c: Parameters<typeof ok>[0],
+  waitUntil: ((promise: Promise<unknown>) => void) | undefined,
+): Promise<R2StorageUsageSnapshot> => {
+  let bucket: R2Bucket;
+  try {
+    bucket = resolveR2Bucket(c.env);
+  } catch (error) {
+    logError(c, error, { event: "dashboard.r2_usage.binding_missing" });
+    return {
+      usedBytes: 0,
+      reason: "binding_missing",
+      observedAt: new Date().toISOString(),
+    };
+  }
+
+  try {
+    const scan = await readR2TotalUsageBytesCached(bucket, {
+      waitUntil,
+      bucketName: c.env.R2_BUCKET,
+    });
+
+    if (!scan.complete) {
+      // 부분 스캔 합계는 하한값이므로 정확한 수치로 표시하지 않는다.
+      logError(
+        c,
+        new Error(
+          `R2 usage scan incomplete after ${scan.pages} pages in ${scan.elapsedMs}ms`,
+        ),
+        { event: "dashboard.r2_usage.partial" },
+      );
+      return {
+        usedBytes: scan.totalUsageBytes,
+        reason: "partial",
+        observedAt: new Date(scan.observedAt).toISOString(),
+      };
+    }
+
+    return {
+      usedBytes: scan.totalUsageBytes,
+      reason: "ok",
+      observedAt: new Date(scan.observedAt).toISOString(),
+    };
+  } catch (error) {
+    logError(c, error, { event: "dashboard.r2_usage.scan_failed" });
+    return {
+      usedBytes: 0,
+      reason: "scan_failed",
+      observedAt: new Date().toISOString(),
+    };
+  }
+};
 
 /**
  * registerDashboardRoutes 생성/등록 절차를 수행해 시스템 상태를 갱신합니다.
@@ -70,21 +136,22 @@ export const registerDashboardRoutes = (
     }
 
     // DB 집계와 R2 사용량 조회는 독립이므로 병렬 실행한다.
-    // R2 조회 실패는 기존과 동일하게 조회불가 상태로 강등한다.
-    const [stats, r2UsageResult] = await Promise.all([
+    // R2 조회 실패는 기존과 동일하게 조회불가 상태로 강등하되, 원인은 로그와
+    // 응답 필드로 남긴다(과거에는 통째로 삼켜서 진단이 불가능했다).
+    const [stats, r2Usage] = await Promise.all([
       dependencies
         .getDataService(c)
         .getAdminDashboardStats(query.data.generationSortOrder ?? null),
-      readR2TotalUsageBytesCached(resolveR2Bucket(c.env), { waitUntil })
-        .then((value) => ({ available: true as const, value }))
-        .catch(() => ({ available: false as const, value: 0 })),
+      readR2StorageUsage(c, waitUntil),
     ]);
 
     return ok(c, {
       ...stats,
-      r2StorageUsedBytes: r2UsageResult.value,
+      r2StorageUsedBytes: r2Usage.usedBytes,
       r2StorageLimitBytes: R2_STORAGE_LIMIT_BYTES,
-      r2StorageUsageAvailable: r2UsageResult.available,
+      r2StorageUsageAvailable: r2Usage.reason === "ok",
+      r2StorageUsageReason: r2Usage.reason,
+      r2StorageObservedAt: r2Usage.observedAt,
     });
   });
 };

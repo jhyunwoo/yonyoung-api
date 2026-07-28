@@ -6,6 +6,7 @@ const SKIP_SESSION_PREFIXES = [
   "/api/auth",
   "/api/public",
   "/api/openapi.json",
+  "/api/status",
   "/api/docs",
   "/doc",
   "/ui",
