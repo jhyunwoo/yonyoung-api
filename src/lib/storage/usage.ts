@@ -37,6 +37,13 @@ type ReadR2TotalUsageBytesCachedOptions = ReadR2TotalUsageBytesOptions & {
   waitUntil?: (promise: Promise<unknown>) => void;
   ttlSeconds?: number;
   bucketName?: string;
+  /**
+   * 호출자가 허용하는 캐시 값의 최대 나이(ms).
+   * 캐시 항목 하나를 대시보드와 업로드 한도 판정이 함께 쓰므로, 저장 시점의 TTL로는
+   * 신선도를 보장할 수 없다(먼저 쓴 쪽의 TTL이 모두에게 적용된다). 읽는 쪽이 요구하는
+   * 신선도를 넘긴 항목은 무시하고 새로 스캔한다.
+   */
+  maxAgeMs?: number;
 };
 
 const defaultSleep = async (ms: number): Promise<void> => {
@@ -181,10 +188,19 @@ export const readR2TotalUsageBytesCached = async (
       const cached = await cache.match(cacheKey);
       if (cached) {
         const body = (await cached.json()) as Partial<R2UsageScanResult>;
+        const observedAt = body.observedAt;
+        const hasObservedAt =
+          typeof observedAt === "number" && Number.isFinite(observedAt);
+        // 나이를 확인할 수 없는 항목은 신선도를 요구하는 호출자에게 넘기지 않는다.
+        const freshEnough =
+          options.maxAgeMs === undefined ||
+          (hasObservedAt && Date.now() - observedAt <= options.maxAgeMs);
+
         if (
           typeof body.totalUsageBytes === "number" &&
           Number.isFinite(body.totalUsageBytes) &&
-          body.complete === true
+          body.complete === true &&
+          freshEnough
         ) {
           return {
             totalUsageBytes: body.totalUsageBytes,
@@ -192,7 +208,7 @@ export const readR2TotalUsageBytesCached = async (
             pages: body.pages ?? 0,
             complete: true,
             elapsedMs: body.elapsedMs ?? 0,
-            observedAt: body.observedAt ?? Date.now(),
+            observedAt: hasObservedAt ? observedAt : Date.now(),
           };
         }
       }

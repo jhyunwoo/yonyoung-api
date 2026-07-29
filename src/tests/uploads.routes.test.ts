@@ -138,6 +138,90 @@ describe("upload presign routes", /** describe 실행 과정에서 필요한 연
       expect(issuePresignedPutUrl).toHaveBeenCalledTimes(10);
     });
 
+    /**
+     * 사용량은 캐시를 거쳐 오므로 "언제 관측했는지"는 요청 시각이 아니라
+     * 스캔 시각이어야 한다. 요청 시각을 기록하면 D1 신선도 트리거가 항상
+     * 통과해 오래된 수치로 한도를 판정하게 된다.
+     */
+    const createCapturingReservationStore = () => {
+      const backingStore = createMemoryUploadReservationStore();
+      const reservations: UploadReservation[] = [];
+      const store: UploadReservationStore = {
+        assertActorCapacity: (actorId, fileSize, now) =>
+          backingStore.assertActorCapacity(actorId, fileSize, now),
+        async reserve(reservation) {
+          reservations.push(reservation);
+          await backingStore.reserve(reservation);
+        },
+        get: (id) => backingStore.get(id),
+        remove: (id) => backingStore.remove(id),
+        settle: (id, expiresAt) => backingStore.settle(id, expiresAt),
+      };
+      return { store, reservations };
+    };
+
+    const usageScanAt = (observedAt: number, totalUsageBytes = 0) => ({
+      totalUsageBytes,
+      objectCount: 0,
+      pages: 1,
+      complete: true,
+      elapsedMs: 0,
+      observedAt,
+    });
+
+    const profilePresignService = () =>
+      createPresignServiceMock({
+        issuePresignedPutUrl: fn(async () => ({
+          uploadUrl: "https://upload.example.com/signed",
+          objectKey: "users/profile-key",
+          publicUrl: "https://cdn.example.com/users/profile-key",
+          requiredHeaders: { "Content-Type": "image/png" },
+        })),
+      });
+
+    const presignProfile = (app: ReturnType<typeof createTestApp>) =>
+      app.request("/api/users/presign/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          fileName: "profile.png",
+          contentType: "image/png",
+          fileSize: 1024,
+        }),
+      });
+
+    it("예약에는 요청 시각이 아니라 사용량을 실제로 관측한 시각을 기록한다", async () => {
+      const captured = createCapturingReservationStore();
+      const observedAt = Date.now() - 5_000;
+      const app = createTestApp({
+        actor: createActor("regular_member"),
+        presignService: profilePresignService(),
+        readR2TotalUsageBytes: () => usageScanAt(observedAt),
+        uploadReservationStore: captured.store,
+      });
+
+      const response = await presignProfile(app);
+
+      expect(response.status).toBe(201);
+      expect(captured.reservations).toHaveLength(1);
+      expect(captured.reservations[0]?.observedAt).toBe(observedAt);
+    });
+
+    it("관측 시각이 오래된 사용량으로는 용량 예약을 만들지 않는다", async () => {
+      const captured = createCapturingReservationStore();
+      const app = createTestApp({
+        actor: createActor("regular_member"),
+        presignService: profilePresignService(),
+        // 캐시가 5분 전 수치를 돌려준 상황.
+        readR2TotalUsageBytes: () => usageScanAt(Date.now() - 300_000),
+        uploadReservationStore: captured.store,
+      });
+
+      const response = await presignProfile(app);
+
+      expect(response.status).toBe(500);
+    });
+
     it("단일 presign 발급 실패 시 생성한 용량 예약을 해제한다", async () => {
       const observedStore = createObservedUploadReservationStore();
       const issuePresignedPutUrl = fn(async () => {

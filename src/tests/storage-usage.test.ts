@@ -241,6 +241,82 @@ describe("readR2TotalUsageBytesCached", () => {
     expect(list).toHaveBeenCalledTimes(2);
   });
 
+  it("호출자가 요구한 신선도보다 오래된 캐시 항목은 다시 스캔한다", async () => {
+    const { store } = installCacheStub();
+    const cacheKey = "https://r2-usage.internal/b/total-usage-bytes";
+    // 대시보드(TTL 300초)가 저장해 둔 오래된 항목을 흉내낸다.
+    store.set(
+      cacheKey,
+      JSON.stringify({
+        totalUsageBytes: 111,
+        objectCount: 1,
+        pages: 1,
+        complete: true,
+        elapsedMs: 0,
+        observedAt: Date.now() - 120_000,
+      }),
+    );
+
+    const list = vi.fn().mockResolvedValue({
+      objects: [{ size: 999 }],
+      truncated: false,
+    });
+
+    const result = await readR2TotalUsageBytesCached(
+      { list } as unknown as R2Bucket,
+      { bucketName: "b", maxAgeMs: 15_000 },
+    );
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(result.totalUsageBytes).toBe(999);
+  });
+
+  it("신선도 요구 안에 있는 캐시 항목은 그대로 사용한다", async () => {
+    const { store } = installCacheStub();
+    store.set(
+      "https://r2-usage.internal/b/total-usage-bytes",
+      JSON.stringify({
+        totalUsageBytes: 111,
+        objectCount: 1,
+        pages: 1,
+        complete: true,
+        elapsedMs: 0,
+        observedAt: Date.now() - 3_000,
+      }),
+    );
+
+    const list = vi.fn();
+
+    const result = await readR2TotalUsageBytesCached(
+      { list } as unknown as R2Bucket,
+      { bucketName: "b", maxAgeMs: 15_000 },
+    );
+
+    expect(list).not.toHaveBeenCalled();
+    expect(result.totalUsageBytes).toBe(111);
+  });
+
+  it("observedAt이 없는 캐시 항목은 신선도를 확인할 수 없으므로 다시 스캔한다", async () => {
+    const { store } = installCacheStub();
+    store.set(
+      "https://r2-usage.internal/b/total-usage-bytes",
+      JSON.stringify({ totalUsageBytes: 111, complete: true }),
+    );
+
+    const list = vi.fn().mockResolvedValue({
+      objects: [{ size: 5 }],
+      truncated: false,
+    });
+
+    const result = await readR2TotalUsageBytesCached(
+      { list } as unknown as R2Bucket,
+      { bucketName: "b", maxAgeMs: 15_000 },
+    );
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(result.totalUsageBytes).toBe(5);
+  });
+
   it("부분 결과는 캐시하지 않는다", async () => {
     const { cache } = installCacheStub();
     const list = vi.fn().mockResolvedValue({

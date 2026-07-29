@@ -70,7 +70,8 @@ export type AppDependencies = {
 };
 
 // 업로드 예약이 사용하는 관측 신선도 창(30초)보다 짧게 유지한다.
-const UPLOAD_USAGE_CACHE_TTL_SECONDS = 15;
+// 캐시 항목은 대시보드와 공유하므로 저장 TTL이 아니라 읽는 쪽의 허용 나이로 강제한다.
+const UPLOAD_USAGE_MAX_AGE_MS = 15_000;
 
 const createRequestDatabase = (c: Context<HonoAppType>) => {
   const database = resolveD1Database(c.env);
@@ -108,7 +109,7 @@ export const createDefaultDependencies = (): AppDependencies => ({
   // 실제 한도 집행은 활성 예약 합계를 더하는 D1 트리거가 담당한다.
   readR2TotalUsageBytes: (c) =>
     readR2TotalUsageBytesCached(resolveR2Bucket(c.env), {
-      ttlSeconds: UPLOAD_USAGE_CACHE_TTL_SECONDS,
+      maxAgeMs: UPLOAD_USAGE_MAX_AGE_MS,
       bucketName: c.env.R2_BUCKET,
     }),
   getViewCountStore: (c) => createD1ViewCountStore(createRequestDatabase(c)),

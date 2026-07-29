@@ -164,8 +164,8 @@ const reserveStorageCapacityBeforeUpload = async (input: {
     };
   }
 
-  const observedAt = Date.now();
   let observedUsedBytes: number;
+  let observedAt: number;
   try {
     const usageScan = await input.dependencies.readR2TotalUsageBytes(input.c);
     // 부분 스캔 합계는 실제 사용량의 하한값이므로 한도 판정에 쓸 수 없다.
@@ -178,6 +178,9 @@ const reserveStorageCapacityBeforeUpload = async (input: {
       };
     }
     observedUsedBytes = usageScan.totalUsageBytes;
+    // 사용량은 캐시를 거쳐 올 수 있다. 요청 시각을 관측 시각으로 기록하면 D1 신선도
+    // 트리거가 항상 통과해, 오래된 수치로 10GB 한도를 판정하게 된다.
+    observedAt = usageScan.observedAt;
   } catch {
     return {
       response: internalError(
@@ -194,7 +197,11 @@ const reserveStorageCapacityBeforeUpload = async (input: {
       ),
     };
   }
-  if (Date.now() - observedAt > UPLOAD_RESERVATION_OBSERVATION_MAX_AGE_MS) {
+  if (
+    !Number.isFinite(observedAt) ||
+    observedAt > Date.now() + 5_000 ||
+    Date.now() - observedAt > UPLOAD_RESERVATION_OBSERVATION_MAX_AGE_MS
+  ) {
     return {
       response: internalError(
         input.c,
