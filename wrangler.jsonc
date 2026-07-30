@@ -17,6 +17,14 @@
   "placement": {
     "mode": "smart"
   },
+  "exports": {
+    "PublicApi": {
+      "type": "worker",
+      "cache": {
+        "enabled": true
+      }
+    }
+  },
   "compatibility_flags": [
     "nodejs_compat"
   ],
@@ -24,6 +32,13 @@
     {
       "bucket_name": "yonyoung-storage",
       "binding": "r2",
+      "remote": false
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "PUBLIC_API_CACHE",
+      "id": "b975be0e5565495ebe38ec5c3d458627",
       "remote": false
     }
   ],
@@ -88,6 +103,13 @@
         {
           "bucket_name": "yonyoung-storage",
           "binding": "r2",
+          "remote": false
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "PUBLIC_API_CACHE",
+          "id": "5e57237224804e508a7af41ddc780fdf",
           "remote": false
         }
       ],

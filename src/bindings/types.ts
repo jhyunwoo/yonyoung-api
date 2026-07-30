@@ -6,6 +6,7 @@ type RuntimeBindingOverrides = {
   db?: D1Database;
   R2?: R2Bucket;
   r2?: R2Bucket;
+  PUBLIC_API_CACHE?: KVNamespace;
   PERF_ANALYTICS?: AnalyticsEngineDataset;
   PAGE_VIEW_RATE_LIMITER?: RateLimit;
   BETTER_AUTH_URL?: string;
