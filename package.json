@@ -24,14 +24,14 @@
 		"security:audit": "pnpm audit --prod --audit-level critical"
 	},
 	"dependencies": {
-		"@aws-sdk/client-s3": "^3.1085.0",
-		"@aws-sdk/s3-request-presigner": "^3.1085.0",
-		"@hono/zod-openapi": "^1.4.0",
+		"@aws-sdk/client-s3": "^3.1109.0",
+		"@aws-sdk/s3-request-presigner": "^3.1109.0",
+		"@hono/zod-openapi": "^1.5.2",
 		"@scalar/hono-api-reference": "^0.9.48",
-		"better-auth": "^1.6.23",
+		"better-auth": "^1.6.27",
 		"dotenv": "^17.4.2",
 		"drizzle-orm": "^0.45.2",
-		"hono": "^4.12.29",
+		"hono": "^4.13.1",
 		"xss": "^1.0.15",
 		"zod": "^4.4.3"
 	},
@@ -43,8 +43,9 @@
 		"drizzle-kit": "^0.31.10",
 		"eslint": "^9.39.5",
 		"typescript": "6.0.2",
-		"typescript-eslint": "^8.63.0",
+		"typescript-eslint": "^8.67.0",
 		"vitest": "^3.2.7",
-		"wrangler": "^4.110.0"
-	}
+		"wrangler": "^4.122.0"
+	},
+	"packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1"
 }
