@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type HonoAppType from "../../types/honoAppType";
-import { logError } from "../../middlewares/logger";
+import { logError } from "../../app/middleware/logger";
 import { runInBackground, type BackgroundTaskOptions } from "./background-task";
 
 const toLabeledError = (label: string, error: unknown): Error => {

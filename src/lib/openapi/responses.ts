@@ -1,14 +1,7 @@
-import { z } from "@hono/zod-openapi";
-import { ZodType } from "zod";
-import { ApiErrorResponseSchema } from "./schemas";
+import { z } from "../../shared/openapi/zod";
+import type { ZodType } from "zod";
+import { ApiErrorResponseSchema } from "../../shared/openapi/common.contract";
 
-/**
- * jsonBody의 핵심 비즈니스 로직을 수행합니다.
- * @param schema 함수 로직에서 사용하는 입력값입니다.
- * @param description 함수 로직에서 사용하는 입력값입니다.
- * @returns 함수 실행 결과를 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 export const jsonBody = <T extends ZodType>(
   schema: T,
   description?: string,
@@ -22,24 +15,11 @@ export const jsonBody = <T extends ZodType>(
   },
 });
 
-/**
- * dataEnvelope의 핵심 비즈니스 로직을 수행합니다.
- * @param schema 함수 로직에서 사용하는 입력값입니다.
- * @returns 함수 실행 결과를 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 const dataEnvelope = <T extends ZodType>(schema: T) =>
   z.object({
     data: schema,
   });
 
-/**
- * dataResponse의 핵심 비즈니스 로직을 수행합니다.
- * @param schema 함수 로직에서 사용하는 입력값입니다.
- * @param description 함수 로직에서 사용하는 입력값입니다.
- * @returns 함수 실행 결과를 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 export const dataResponse = <T extends ZodType>(
   schema: T,
   description = "요청이 정상 처리되었습니다. 응답 본문의 data 필드에 결과가 포함됩니다.",
@@ -52,13 +32,6 @@ export const dataResponse = <T extends ZodType>(
   },
 });
 
-/**
- * createdResponse 생성/등록 절차를 수행해 시스템 상태를 갱신합니다.
- * @param schema 함수 로직에서 사용하는 입력값입니다.
- * @param description 함수 로직에서 사용하는 입력값입니다.
- * @returns 처리 결과 값을 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 export const createdResponse = <T extends ZodType>(
   schema: T,
   description =
@@ -77,12 +50,6 @@ export const noContentResponse = {
     "요청이 정상 처리되었으며 반환 본문은 없습니다. 클라이언트에서는 상태 코드(204)만 확인하면 됩니다.",
 };
 
-/**
- * errorResponse의 핵심 비즈니스 로직을 수행합니다.
- * @param description 함수 로직에서 사용하는 입력값입니다.
- * @returns 함수 실행 결과를 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 const errorResponse = (description: string) => ({
   description,
   content: {

@@ -1,36 +1,43 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import type HonoAppType from "../types/honoAppType";
-import type { AppBindings } from "../types/honoAppType";
-import { badRequest, forbidden, noContent, notFound, ok } from "../lib/http/response";
-import { parseBody } from "../lib/validation/request";
-import type { AppDependencies } from "../lib/services/dependencies";
-import { requireActor, requirePermission } from "../lib/http/authz";
-import { recordAuditLog } from "../lib/audit";
-import { respondWithPublicCache } from "../lib/http/public-cache";
-import { can } from "../lib/authorization/policy";
-import type { Resource, Role } from "../lib/authorization/types";
-import type { AttachmentScope, CreateAttachmentInput } from "../lib/services/types";
+import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import type HonoAppType from "../../types/honoAppType";
+import type { AppBindings } from "../../types/honoAppType";
+import { noContent, ok } from "../../lib/http/response";
+import type { AppDependencies } from "../../lib/services/dependencies";
+import {
+  assertPermission,
+  requireAuthenticatedActor,
+} from "../../shared/http/route-guards";
+import { readValidated } from "../../shared/http/validated-input";
+import { recordAuditLog } from "../../lib/audit";
+import { respondWithPublicCache } from "../../lib/http/public-cache";
+import { can } from "../../lib/authorization/policy";
+import type { Resource, Role } from "../../lib/authorization/types";
+import type {
+  AttachmentScope,
+  CreateAttachmentInput,
+} from "../../lib/services/types";
 import {
   parseManagedObjectKey,
   resolvePublicObjectBaseOrigin,
   resolvePublicObjectSigningSecrets,
   verifySignedPublicObjectSignature,
-} from "../lib/storage/presign";
+} from "../../lib/storage/presign";
 import {
   dataResponse,
   createdResponse,
   errorResponses,
   jsonBody,
   noContentResponse,
-} from "../lib/openapi/responses";
+} from "../../lib/openapi/responses";
 import {
   ApiAttachmentListQuerySchema,
   ApiAttachmentSchema,
   ApiCreateAttachmentSchema,
-  ApiIdParamSchema,
   ApiUpdateAttachmentSchema,
-} from "../lib/openapi/schemas";
-import { isHttpUrl } from "../lib/validation/url";
+} from "./attachment.contract";
+import { ApiIdParamSchema } from "../../shared/openapi/common.contract";
+import { isHttpUrl } from "../../lib/validation/url";
+import { AppError } from "../../shared/errors/AppError";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -199,7 +206,10 @@ const listPublicAttachmentsRoute = createRoute({
     query: ApiAttachmentListQuerySchema,
   },
   responses: {
-    200: dataResponse(ApiAttachmentSchema.array(), "공개 첨부파일 목록 조회 성공"),
+    200: dataResponse(
+      ApiAttachmentSchema.array(),
+      "공개 첨부파일 목록 조회 성공",
+    ),
     400: errorResponses[400],
   },
 });
@@ -208,90 +218,71 @@ export const registerAttachmentRoutes = (
   app: App,
   dependencies: AppDependencies,
 ) => {
-  app.openapi(listAttachmentsRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(listAttachmentsRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    const query = ApiAttachmentListQuerySchema.safeParse(c.req.query());
-    if (!query.success) {
-      return badRequest(c, query.error.issues[0]?.message ?? "잘못된 요청입니다.");
-    }
+    const query = readValidated(c, "query", ApiAttachmentListQuerySchema);
 
-    const denied = requirePermission(
-      c,
-      actorResult.actor,
-      policyResourceByScope[query.data.scope],
-      "read",
-    );
-    if (denied) {
-      return denied;
-    }
+    assertPermission(actor, policyResourceByScope[query.scope], "read");
 
     const data = await dependencies
       .getDataService(c)
-      .listAttachments(query.data.scope, query.data.resourceId ?? null);
+      .listAttachments(query.scope, query.resourceId ?? null);
 
     return ok(c, data);
   });
 
-  app.openapi(createAttachmentRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
+  app.openapi(createAttachmentRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+
+    const body = readValidated(c, "json", ApiCreateAttachmentSchema);
+
+    if (!canManageScope(actor.role, body.scope)) {
+      throw AppError.forbidden();
     }
 
-    const body = await parseBody(c, ApiCreateAttachmentSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
+    if (body.scope === "activity" && !body.resourceId) {
+      throw AppError.badRequest(
+        "scope=activity에는 resourceId(활동 UUID)가 필요합니다.",
+      );
     }
 
-    if (!canManageScope(actorResult.actor.role, body.data.scope)) {
-      return forbidden(c);
-    }
-
-    if (body.data.scope === "activity" && !body.data.resourceId) {
-      return badRequest(c, "scope=activity에는 resourceId(활동 UUID)가 필요합니다.");
-    }
-
-    const isLinkAttachment = body.data.linkUrl !== undefined;
+    const isLinkAttachment = body.linkUrl !== undefined;
     if (
       !isLinkAttachment &&
       !(await isValidManagedFileUrl({
-        fileUrl: body.data.fileUrl ?? "",
-        scope: body.data.scope,
-        actorId: actorResult.actor.id,
+        fileUrl: body.fileUrl ?? "",
+        scope: body.scope,
+        actorId: actor.id,
         env: c.env,
       }))
     ) {
-      return badRequest(
-        c,
+      throw AppError.badRequest(
         "fileUrl이 올바르지 않습니다. 업로드 완료 후 발급된 공개 미디어 URL을 전달해 주세요.",
       );
     }
 
     const createInput: CreateAttachmentInput = {
-      scope: body.data.scope,
-      resourceId: body.data.resourceId ?? null,
-      title: body.data.title,
-      fileUrl: body.data.fileUrl ?? null,
-      fileName: body.data.fileName ?? null,
-      fileSize: body.data.fileSize ?? null,
-      mimeType: body.data.mimeType ?? null,
-      linkUrl: body.data.linkUrl ?? null,
-      sortOrder: body.data.sortOrder,
+      scope: body.scope,
+      resourceId: body.resourceId ?? null,
+      title: body.title,
+      fileUrl: body.fileUrl ?? null,
+      fileName: body.fileName ?? null,
+      fileSize: body.fileSize ?? null,
+      mimeType: body.mimeType ?? null,
+      linkUrl: body.linkUrl ?? null,
+      sortOrder: body.sortOrder,
     };
 
     const dataService = dependencies.getDataService(c);
     const data = await dataService.addAttachment(createInput);
     if (!data) {
-      return notFound(c, "첨부할 활동을 찾을 수 없습니다.");
+      throw AppError.notFound("첨부할 활동을 찾을 수 없습니다.");
     }
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "attachment",
       resourceId: data.id,
       action: "create",
@@ -303,80 +294,65 @@ export const registerAttachmentRoutes = (
     return ok(c, data, 201);
   });
 
-  app.openapi(updateAttachmentRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(updateAttachmentRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    const params = ApiIdParamSchema.safeParse(c.req.param());
-    if (!params.success) {
-      return badRequest(c, params.error.issues[0]?.message ?? "잘못된 요청입니다.");
-    }
+    const params = readValidated(c, "param", ApiIdParamSchema);
 
-    const body = await parseBody(c, ApiUpdateAttachmentSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
+    const body = readValidated(c, "json", ApiUpdateAttachmentSchema);
 
     const dataService = dependencies.getDataService(c);
-    const existing = await dataService.getAttachmentById(params.data.id);
+    const existing = await dataService.getAttachmentById(params.id);
     if (!existing) {
-      return notFound(c, "첨부파일을 찾을 수 없습니다.");
+      throw AppError.notFound("첨부파일을 찾을 수 없습니다.");
     }
 
-    if (!canManageScope(actorResult.actor.role, existing.scope)) {
-      return forbidden(c);
+    if (!canManageScope(actor.role, existing.scope)) {
+      throw AppError.forbidden();
     }
 
-    const data = await dataService.updateAttachment(params.data.id, body.data);
+    const data = await dataService.updateAttachment(params.id, body);
     if (!data) {
-      return notFound(c, "첨부파일을 찾을 수 없습니다.");
+      throw AppError.notFound("첨부파일을 찾을 수 없습니다.");
     }
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "attachment",
       resourceId: data.id,
       action: "update",
-      changedFields: Object.keys(body.data).sort(),
+      changedFields: Object.keys(body).sort(),
     });
 
     return ok(c, data);
   });
 
-  app.openapi(deleteAttachmentRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(deleteAttachmentRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    const params = ApiIdParamSchema.safeParse(c.req.param());
-    if (!params.success) {
-      return badRequest(c, params.error.issues[0]?.message ?? "잘못된 요청입니다.");
-    }
+    const params = readValidated(c, "param", ApiIdParamSchema);
 
     const dataService = dependencies.getDataService(c);
-    const existing = await dataService.getAttachmentById(params.data.id);
+    const existing = await dataService.getAttachmentById(params.id);
     if (!existing) {
-      return notFound(c, "첨부파일을 찾을 수 없습니다.");
+      throw AppError.notFound("첨부파일을 찾을 수 없습니다.");
     }
 
-    if (!canManageScope(actorResult.actor.role, existing.scope)) {
-      return forbidden(c);
+    if (!canManageScope(actor.role, existing.scope)) {
+      throw AppError.forbidden();
     }
 
-    const deleted = await dataService.deleteAttachment(params.data.id);
+    const deleted = await dataService.deleteAttachment(params.id);
     if (!deleted) {
-      return notFound(c, "첨부파일을 찾을 수 없습니다.");
+      throw AppError.notFound("첨부파일을 찾을 수 없습니다.");
     }
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "attachment",
-      resourceId: params.data.id,
+      resourceId: params.id,
       action: "delete",
       changedFields: ["deleted"],
     });
@@ -384,28 +360,25 @@ export const registerAttachmentRoutes = (
     return noContent(c);
   });
 
-  app.openapi(listPublicAttachmentsRoute, async (c): Promise<any> =>
+  app.openapi(listPublicAttachmentsRoute, async (c) =>
     respondWithPublicCache(c, async () => {
-      const query = ApiAttachmentListQuerySchema.safeParse(c.req.query());
-      if (!query.success) {
-        return badRequest(c, query.error.issues[0]?.message ?? "잘못된 요청입니다.");
-      }
+      const query = readValidated(c, "query", ApiAttachmentListQuerySchema);
 
       const dataService = dependencies.getDataService(c);
-      if (query.data.scope === "activity") {
-        if (!query.data.resourceId) {
+      if (query.scope === "activity") {
+        if (!query.resourceId) {
           return ok(c, []);
         }
 
-        const activity = await dataService.getActivityById(query.data.resourceId);
+        const activity = await dataService.getActivityById(query.resourceId);
         if (!activity) {
           return ok(c, []);
         }
       }
 
       const data = await dataService.listAttachments(
-        query.data.scope,
-        query.data.resourceId ?? null,
+        query.scope,
+        query.resourceId ?? null,
       );
 
       const publicVisibility = await Promise.all(
@@ -426,7 +399,10 @@ export const registerAttachmentRoutes = (
         }),
       );
 
-      return ok(c, data.filter((_, index) => publicVisibility[index]));
+      return ok(
+        c,
+        data.filter((_, index) => publicVisibility[index]),
+      );
     }),
   );
 };

@@ -39,15 +39,22 @@ const UUID_PATTERN = /^[0-9a-fA-F-]{36}$/;
 const args = new Set(process.argv.slice(2));
 const isRemote = args.has("--remote");
 const isDryRun = args.has("--dry-run");
-const cdnBaseUrl = (process.env.IMAGE_CDN_BASE_URL ?? DEFAULT_CDN_BASE_URL).replace(
-  /\/+$/,
-  "",
-);
+const cdnBaseUrl = (
+  process.env.IMAGE_CDN_BASE_URL ?? DEFAULT_CDN_BASE_URL
+).replace(/\/+$/, "");
 
 const runWrangler = (wranglerArgs) => {
   const output = execFileSync(
     "npx",
-    ["wrangler", "d1", "execute", DATABASE_NAME, isRemote ? "--remote" : "--local", "--json", ...wranglerArgs],
+    [
+      "wrangler",
+      "d1",
+      "execute",
+      DATABASE_NAME,
+      isRemote ? "--remote" : "--local",
+      "--json",
+      ...wranglerArgs,
+    ],
     { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
 
@@ -84,7 +91,9 @@ const extractObjectPath = (imageUrl) => {
 };
 
 const fetchDimensionsOnce = async (objectPath) => {
-  const response = await fetch(`${cdnBaseUrl}/cdn-cgi/image/format=json/${objectPath}`);
+  const response = await fetch(
+    `${cdnBaseUrl}/cdn-cgi/image/format=json/${objectPath}`,
+  );
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
@@ -101,7 +110,12 @@ const fetchDimensionsOnce = async (objectPath) => {
   const payload = await response.json();
   const width = Number(payload?.width ?? payload?.original?.width);
   const height = Number(payload?.height ?? payload?.original?.height);
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+  if (
+    !Number.isInteger(width) ||
+    !Number.isInteger(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
     throw new Error(`형식이 올바르지 않은 응답: ${JSON.stringify(payload)}`);
   }
   return { width, height };
@@ -130,13 +144,16 @@ const mapWithConcurrency = async (items, limit, mapper) => {
   const results = new Array(items.length);
   let cursor = 0;
 
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      results[index] = await mapper(items[index], index);
-    }
-  });
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    },
+  );
 
   await Promise.all(workers);
   return results;
@@ -167,27 +184,31 @@ const processTable = async (table) => {
     return { updated: 0, skipped: 0 };
   }
 
-  const resolved = await mapWithConcurrency(rows, FETCH_CONCURRENCY, async (row) => {
-    // 생성된 SQL에 직접 넣는 값이므로 id 형식을 먼저 검증한다
-    if (typeof row.id !== "string" || !UUID_PATTERN.test(row.id)) {
-      console.warn(`  건너뜀 (id 형식 이상): ${row.id}`);
-      return null;
-    }
+  const resolved = await mapWithConcurrency(
+    rows,
+    FETCH_CONCURRENCY,
+    async (row) => {
+      // 생성된 SQL에 직접 넣는 값이므로 id 형식을 먼저 검증한다
+      if (typeof row.id !== "string" || !UUID_PATTERN.test(row.id)) {
+        console.warn(`  건너뜀 (id 형식 이상): ${row.id}`);
+        return null;
+      }
 
-    const objectPath = extractObjectPath(row.image_url);
-    if (!objectPath) {
-      console.warn(`  건너뜀 (오브젝트 경로 추출 실패): ${row.image_url}`);
-      return null;
-    }
+      const objectPath = extractObjectPath(row.image_url);
+      if (!objectPath) {
+        console.warn(`  건너뜀 (오브젝트 경로 추출 실패): ${row.image_url}`);
+        return null;
+      }
 
-    try {
-      const { width, height } = await fetchDimensions(objectPath);
-      return { id: row.id, width, height };
-    } catch (error) {
-      console.warn(`  건너뜀 (${error.message}): ${objectPath}`);
-      return null;
-    }
-  });
+      try {
+        const { width, height } = await fetchDimensions(objectPath);
+        return { id: row.id, width, height };
+      } catch (error) {
+        console.warn(`  건너뜀 (${error.message}): ${objectPath}`);
+        return null;
+      }
+    },
+  );
 
   const updates = resolved.filter((item) => item !== null);
   const skipped = rows.length - updates.length;
@@ -223,7 +244,9 @@ const main = async () => {
 
   console.log(`\n완료: 반영 ${totalUpdated}건, 건너뜀 ${totalSkipped}건`);
   if (totalSkipped > 0) {
-    console.log("건너뛴 행은 width/height가 NULL로 남고 프런트 폴백 경로로 렌더링됩니다.");
+    console.log(
+      "건너뛴 행은 width/height가 NULL로 남고 프런트 폴백 경로로 렌더링됩니다.",
+    );
   }
 };
 

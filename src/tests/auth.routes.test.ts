@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { registerAuthRoutes } from "../modules/auth";
+import { registerAuthRoutes } from "../features/auth/auth.routes";
 import type HonoAppType from "../types/honoAppType";
 
 vi.mock("../lib/auth", () => ({

@@ -1,7 +1,7 @@
-import { Context } from "hono";
+import { type Context } from "hono";
 import { AppError } from "../../shared/errors/AppError";
 import { toErrorResponse } from "../../shared/errors/httpProblem";
-import { HttpError } from "./errors";
+import { type HttpError } from "./errors";
 
 const normalizeValue = (value: unknown): unknown => {
   if (value instanceof Date) {
@@ -21,8 +21,27 @@ const normalizeValue = (value: unknown): unknown => {
   return value;
 };
 
-export const ok = <T>(c: Context, data: T, status = 200) => {
-  return c.json({ data: normalizeValue(data) }, status as 200 | 201);
+/**
+ * JSON 직렬화 후의 응답 모양. `normalizeValue`가 Date를 epoch ms로 바꾸므로
+ * OpenAPI 스키마(timestamp = number)와 같은 타입이 된다.
+ */
+export type SerializedResponseBody<T> = T extends Date
+  ? number
+  : T extends (infer U)[]
+    ? SerializedResponseBody<U>[]
+    : T extends object
+      ? { [K in keyof T]: SerializedResponseBody<T[K]> }
+      : T;
+
+export const ok = <T, TStatus extends 200 | 201 = 200>(
+  c: Context,
+  data: T,
+  status: TStatus = 200 as TStatus,
+) => {
+  return c.json(
+    { data: normalizeValue(data) as SerializedResponseBody<T> },
+    status,
+  );
 };
 
 export const noContent = (c: Context) => {

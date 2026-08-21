@@ -189,7 +189,8 @@ export type ApiCreateExhibitionImageInput = {
   height?: number;
 };
 
-export type ApiUpdateExhibitionImageInput = Partial<ApiCreateExhibitionImageInput>;
+export type ApiUpdateExhibitionImageInput =
+  Partial<ApiCreateExhibitionImageInput>;
 
 export type ApiUpdateExhibitionImageBatchItemInput = {
   imageId: string;
@@ -345,10 +346,7 @@ export type ApiUser = {
 };
 
 export type ApiUserResourceHistoryResourceType =
-  | "activity"
-  | "exhibition"
-  | "linktree"
-  | "linktree_item";
+  "activity" | "exhibition" | "linktree" | "linktree_item";
 
 export type ApiUserResourceHistoryItem = {
   id: string;
@@ -436,7 +434,8 @@ export type ApiMemberProfileUpdateInput = {
   personalLink?: string | null;
 };
 
-export type ApiUpdateUserInput = ApiAdminUpdateUserInput | ApiMemberProfileUpdateInput;
+export type ApiUpdateUserInput =
+  ApiAdminUpdateUserInput | ApiMemberProfileUpdateInput;
 
 export type ApiBulkUpdateUserRoleInput = {
   userIds: string[];

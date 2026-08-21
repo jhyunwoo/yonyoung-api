@@ -1,43 +1,63 @@
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { z } from "../../shared/openapi/zod";
 import {
   ApiActivitySchema,
+} from "../activities/activity.contract";
+import {
   ApiExhibitionSchema,
+} from "../exhibitions/exhibition.contract";
+import {
   ApiGenerationSchema,
-  ApiIdParamSchema,
+} from "../generations/generation.contract";
+import {
   ApiLinktreeSchema,
-  ApiPublicGenerationWithMembersSchema,
-  ApiRecruitingPlanSchema,
+} from "../linktree/linktree.contract";
+import {
   ApiRecordViewBodySchema,
-  ApiSiteSettingsSchema,
   ApiViewCountsQuerySchema,
   ApiViewCountsResponseSchema,
-} from "../lib/openapi/schemas";
+} from "../page-views/page-view.contract";
+import {
+  ApiRecruitingPlanSchema,
+} from "../recruiting-plan/recruiting-plan.contract";
+import {
+  ApiSiteSettingsSchema,
+} from "../site-settings/site-settings.contract";
+import {
+  ApiPublicGenerationWithMembersSchema,
+} from "../users/user.contract";
+import {
+  ApiIdParamSchema,
+} from "../../shared/openapi/common.contract";
 import {
   dataResponse,
   errorResponses,
   noContentResponse,
   jsonBody,
-} from "../lib/openapi/responses";
-import { badRequest, internalError, noContent, notFound, ok } from "../lib/http/response";
-import { respondWithPublicCache } from "../lib/http/public-cache";
-import { AppDependencies } from "../lib/services/dependencies";
-import HonoAppType from "../types/honoAppType";
-import { sanitizeRichTextHtml } from "../lib/content/rich-text";
-import { sanitizeExhibitionRichText } from "../lib/content/exhibition-rich-text";
-import { createR2Client, resolveR2Bucket } from "../infra/r2/client";
+} from "../../lib/openapi/responses";
+import { badRequest, internalError, noContent, ok } from "../../lib/http/response";
+import { respondWithPublicCache } from "../../lib/http/public-cache";
+import { type AppDependencies } from "../../lib/services/dependencies";
+import type HonoAppType from "../../types/honoAppType";
+import { sanitizeRichTextHtml } from "../../lib/content/rich-text";
+import { sanitizeExhibitionRichText } from "../../lib/content/exhibition-rich-text";
+import { createR2Client, resolveR2Bucket } from "../../infra/r2/client";
 import {
   ALLOWED_ATTACHMENT_CONTENT_TYPES,
   ALLOWED_IMAGE_CONTENT_TYPES,
   parseManagedObjectKey,
   resolvePublicObjectSigningSecrets,
   verifySignedPublicObjectSignature,
-} from "../lib/storage/presign";
+} from "../../lib/storage/presign";
 import {
   isEntityPageViewType,
   normalizePageViewResourceId,
-} from "../lib/views/page-view-target";
-import { isHttpUrl } from "../lib/validation/url";
-import { DEFAULT_SITE_SETTINGS } from "../shared/api-contracts";
+} from "../../lib/views/page-view-target";
+import { isHttpUrl } from "../../lib/validation/url";
+import { DEFAULT_SITE_SETTINGS } from "../../shared/api-contracts";
+import { AppError } from "../../shared/errors/AppError";
+import { readValidated } from "../../shared/http/validated-input";
+
 
 type App = OpenAPIHono<HonoAppType>;
 const PUBLIC_MEDIA_CACHE_CONTROL =
@@ -351,13 +371,6 @@ const getViewCountsRoute = createRoute({
   },
 });
 
-/**
- * registerPublicRoutes 생성/등록 절차를 수행해 시스템 상태를 갱신합니다.
- * @param app 함수 로직에서 사용하는 입력값입니다.
- * @param dependencies 함수 로직에서 사용하는 입력값입니다.
- * @returns 처리 결과 값을 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 export const registerPublicRoutes = (
   app: App,
   dependencies: AppDependencies,
@@ -365,12 +378,12 @@ export const registerPublicRoutes = (
   app.get("/api/public/media/:objectKey{.+}", async (c) => {
     const objectKey = c.req.param("objectKey");
     if (typeof objectKey !== "string" || objectKey.length === 0) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     const parsedObjectKey = parseManagedObjectKey(objectKey);
     if (!parsedObjectKey) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     const signingSecrets = resolvePublicObjectSigningSecrets(c.env);
@@ -388,13 +401,13 @@ export const registerPublicRoutes = (
       signingSecrets,
     });
     if (!isValidSignature) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     const bucket = resolveR2Bucket(c.env);
     const object = await createR2Client(bucket).getObject(objectKey);
     if (!object) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     const resolvedContentType = resolvePublicMediaContentType(
@@ -402,7 +415,7 @@ export const registerPublicRoutes = (
       object.httpMetadata?.contentType,
     );
     if (!resolvedContentType) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     const headers = new Headers();
@@ -432,7 +445,7 @@ export const registerPublicRoutes = (
     });
   });
 
-  app.openapi(listPublicActivitiesRoute, async (c): Promise<any> =>
+  app.openapi(listPublicActivitiesRoute, async (c) =>
     respondWithPublicCache(c, async () => {
       const data = await dependencies.getDataService(c).listPublicActivities();
       const sanitized = data
@@ -444,25 +457,25 @@ export const registerPublicRoutes = (
     }),
   );
 
-  app.openapi(getPublicActivityByIdRoute, async (c): Promise<any> =>
+  app.openapi(getPublicActivityByIdRoute, async (c) =>
     respondWithPublicCache(c, async () => {
-      const params = ApiIdParamSchema.safeParse(c.req.param());
-      if (!params.success) {
-        return badRequest(c, params.error.issues[0]?.message ?? "잘못된 요청입니다.");
-      }
+      const params = readValidated(c, "param", ApiIdParamSchema);
 
       const data = await dependencies
         .getDataService(c)
-        .getActivityById(params.data.id);
+        .getActivityById(params.id);
       if (!data) {
-        return notFound(c);
+        throw AppError.notFound();
       }
       const sanitized = sanitizePublicActivity(data);
-      return sanitized ? ok(c, sanitized) : notFound(c);
+      if (!sanitized) {
+        throw AppError.notFound();
+      }
+      return ok(c, sanitized);
     }),
   );
 
-  app.openapi(listPublicExhibitionsRoute, async (c): Promise<any> =>
+  app.openapi(listPublicExhibitionsRoute, async (c) =>
     respondWithPublicCache(c, async () => {
       const data = await dependencies.getDataService(c).listPublicExhibitions();
       const sanitized = data
@@ -474,46 +487,46 @@ export const registerPublicRoutes = (
     }),
   );
 
-  app.openapi(getPublicExhibitionByIdRoute, async (c): Promise<any> =>
+  app.openapi(getPublicExhibitionByIdRoute, async (c) =>
     respondWithPublicCache(c, async () => {
-      const params = ApiIdParamSchema.safeParse(c.req.param());
-      if (!params.success) {
-        return badRequest(c, params.error.issues[0]?.message ?? "잘못된 요청입니다.");
-      }
+      const params = readValidated(c, "param", ApiIdParamSchema);
 
       const data = await dependencies
         .getDataService(c)
-        .getExhibitionById(params.data.id);
+        .getExhibitionById(params.id);
       if (!data) {
-        return notFound(c);
+        throw AppError.notFound();
       }
       const sanitized = sanitizePublicExhibition(data);
-      return sanitized ? ok(c, sanitized) : notFound(c);
+      if (!sanitized) {
+        throw AppError.notFound();
+      }
+      return ok(c, sanitized);
     }),
   );
 
-  app.openapi(listPublicLinktreeRoute, async (c): Promise<any> =>
+  app.openapi(listPublicLinktreeRoute, async (c) =>
     respondWithPublicCache(c, async () => {
       const data = await dependencies.getDataService(c).listLinktrees();
       return ok(c, data.map(sanitizePublicLinktree));
     }),
   );
 
-  app.openapi(getPublicSiteSettingsRoute, async (c): Promise<any> =>
+  app.openapi(getPublicSiteSettingsRoute, async (c) =>
     respondWithPublicCache(c, async () => {
       const data = await dependencies.getDataService(c).getSiteSettings();
       return ok(c, sanitizePublicSiteSettings(data));
     }),
   );
 
-  app.openapi(getPublicCurrentRecruitingPlanRoute, async (c): Promise<any> =>
+  app.openapi(getPublicCurrentRecruitingPlanRoute, async (c) =>
     respondWithPublicCache(c, async () => {
       const data = await dependencies.getDataService(c).getCurrentRecruitingPlan();
       return ok(c, data ? sanitizePublicRecruitingPlan(data) : null);
     }),
   );
 
-  app.openapi(listPublicGenerationsRoute, async (c): Promise<any> =>
+  app.openapi(listPublicGenerationsRoute, async (c) =>
     respondWithPublicCache(c, async () => {
       const data = await dependencies
         .getDataService(c)
@@ -523,7 +536,7 @@ export const registerPublicRoutes = (
     }),
   );
 
-  app.openapi(listPublicPhotographersRoute, async (c): Promise<any> =>
+  app.openapi(listPublicPhotographersRoute, async (c) =>
     respondWithPublicCache(c, async () => {
       const dataService = dependencies.getDataService(c);
       const [generations, users] = await Promise.all([
@@ -589,7 +602,7 @@ export const registerPublicRoutes = (
     }),
   );
 
-  app.openapi(recordViewRoute, async (c): Promise<any> => {
+  app.openapi(recordViewRoute, async (c) => {
     const parsed = ApiRecordViewBodySchema.safeParse(await c.req.json());
     if (!parsed.success) {
       return badRequest(
@@ -637,16 +650,12 @@ export const registerPublicRoutes = (
     return noContent(c);
   });
 
-  app.openapi(getViewCountsRoute, async (c): Promise<any> => {
-    const query = ApiViewCountsQuerySchema.safeParse(c.req.query());
-    if (!query.success) {
-      return badRequest(
-        c,
-        query.error.issues[0]?.message ?? "잘못된 요청입니다.",
-      );
-    }
-
-    const { resourceType, resourceIds: rawIds } = query.data;
+  app.openapi(getViewCountsRoute, async (c) => {
+    const { resourceType, resourceIds: rawIds } = readValidated(
+      c,
+      "query",
+      ApiViewCountsQuerySchema,
+    );
     const resourceIds = Array.from(
       new Set(
         rawIds
@@ -657,11 +666,11 @@ export const registerPublicRoutes = (
     );
 
     if (resourceIds.length === 0) {
-      return badRequest(c, "resourceIds에 유효한 ID가 포함되어야 합니다.");
+      throw AppError.badRequest("resourceIds에 유효한 ID가 포함되어야 합니다.");
     }
 
     if (resourceIds.length > 100) {
-      return badRequest(c, "한 번에 최대 100개의 리소스만 조회할 수 있습니다.");
+      throw AppError.badRequest("한 번에 최대 100개의 리소스만 조회할 수 있습니다.");
     }
 
     if (isEntityPageViewType(resourceType)) {
@@ -669,7 +678,7 @@ export const registerPublicRoutes = (
         (id) => !ViewResourceIdSchema.safeParse(id).success,
       );
       if (invalidResourceId) {
-        return badRequest(c, "resourceIds에는 UUID만 포함할 수 있습니다.");
+        throw AppError.badRequest("resourceIds에는 UUID만 포함할 수 있습니다.");
       }
     }
 

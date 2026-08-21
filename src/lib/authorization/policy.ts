@@ -2,7 +2,7 @@ import {
   isMemberLikeRoleValue,
   normalizeLegacyRole,
 } from "../../shared/auth/roles";
-import { Action, Resource, Role } from "./types";
+import { type Action, type Resource, type Role } from "./types";
 
 type PermissionMatrix = Record<Role, Record<Resource, Record<Action, boolean>>>;
 
@@ -45,13 +45,6 @@ export const normalizeRole = (rawRole: string | null | undefined): Role => {
   return normalizeLegacyRole(rawRole);
 };
 
-/**
- * canAssignRole 조건을 평가해 사용 가능 여부를 판별합니다.
- * @param actorRole 권한 판단에 사용되는 역할 정보입니다.
- * @param targetRoleRaw 권한 판단에 사용되는 역할 정보입니다.
- * @returns 조건 판별 결과(boolean)를 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 export const canAssignRole = (
   actorRole: Role,
   targetRoleRaw: string | null | undefined,
@@ -60,12 +53,6 @@ export const canAssignRole = (
   return roleLevel[targetRole] <= roleLevel[actorRole];
 };
 
-/**
- * isMemberLikeRole 조건을 평가해 사용 가능 여부를 판별합니다.
- * @param role 권한 판단에 사용되는 역할 정보입니다.
- * @returns 조건 판별 결과(boolean)를 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 export const isMemberLikeRole = (role: Role): boolean => {
   return isMemberLikeRoleValue(role);
 };
@@ -134,14 +121,6 @@ const permissionMatrix: PermissionMatrix = {
   },
 };
 
-/**
- * can 조건을 평가해 사용 가능 여부를 판별합니다.
- * @param role 권한 판단에 사용되는 역할 정보입니다.
- * @param resource 응답 데이터 또는 응답 객체입니다.
- * @param action 함수 로직에서 사용하는 입력값입니다.
- * @returns 조건 판별 결과(boolean)를 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 export const can = (role: Role, resource: Resource, action: Action): boolean => {
   return permissionMatrix[role][resource][action];
 };

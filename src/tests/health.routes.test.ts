@@ -1,3 +1,4 @@
+import type * as HealthCheckModule from "../lib/health/check";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HealthReport } from "../lib/health/check";
 
@@ -25,7 +26,7 @@ const runInfrastructureHealthChecksMock = vi.hoisted(() =>
 );
 
 vi.mock("../lib/health/check", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../lib/health/check")>();
+  const actual = await importOriginal<typeof HealthCheckModule>();
   return {
     ...actual,
     runInfrastructureHealthChecks: runInfrastructureHealthChecksMock,

@@ -8,13 +8,13 @@
 
 역할 문자열은 `src/shared/auth/roles.ts`에서 정규화된다. 알 수 없는 값은 `unverified`로 취급한다.
 
-| 역할 | 설명 | 서열 |
-| --- | --- | --- |
-| `president` | 회장 | 4 |
-| `vice_president` | 부회장 | 3 |
-| `manager` | 운영진(부장) | 2 |
-| `new_member` / `associate_member` / `regular_member` | 부원 (셋 다 동일 권한) | 1 |
-| `unverified` | 미승인 (가입 직후) | 0 |
+| 역할                                                 | 설명                   | 서열 |
+| ---------------------------------------------------- | ---------------------- | ---- |
+| `president`                                          | 회장                   | 4    |
+| `vice_president`                                     | 부회장                 | 3    |
+| `manager`                                            | 운영진(부장)           | 2    |
+| `new_member` / `associate_member` / `regular_member` | 부원 (셋 다 동일 권한) | 1    |
+| `unverified`                                         | 미승인 (가입 직후)     | 0    |
 
 - 서열은 `canAssignRole` 판정에 쓰인다: **본인 서열보다 높은 역할을 남에게 부여할 수 없다.**
 - 문서에서 "회장단" = president + vice_president, "부원"은 member 계열 3종을 뜻한다.
@@ -23,14 +23,14 @@
 
 C=생성, R=조회, U=수정, D=삭제. ✔=가능, ✖=불가.
 
-| 리소스 | president | vice_president | manager | 부원 | unverified |
-| --- | --- | --- | --- | --- | --- |
-| `generation` (기수) | CRUD | CRU / D✖ | R | R | ✖ |
-| `activity` (활동) | CRUD | CRUD | CRUD | R | ✖ |
-| `exhibition` (전시) | CRUD | CRU / D✖ | CRU / D✖ | R | ✖ |
-| `linktree` (링크 모음) | CRUD | CRUD | CRUD | R | ✖ |
-| `user` (멤버) | CRUD | CRUD | R | R | ✖ |
-| `site_setting` (사이트 설정·후원 자료·모집) | CRUD | CRUD | R | R | ✖ |
+| 리소스                                      | president | vice_president | manager  | 부원 | unverified |
+| ------------------------------------------- | --------- | -------------- | -------- | ---- | ---------- |
+| `generation` (기수)                         | CRUD      | CRU / D✖       | R        | R    | ✖          |
+| `activity` (활동)                           | CRUD      | CRUD           | CRUD     | R    | ✖          |
+| `exhibition` (전시)                         | CRUD      | CRU / D✖       | CRU / D✖ | R    | ✖          |
+| `linktree` (링크 모음)                      | CRUD      | CRUD           | CRUD     | R    | ✖          |
+| `user` (멤버)                               | CRUD      | CRUD           | R        | R    | ✖          |
+| `site_setting` (사이트 설정·후원 자료·모집) | CRUD      | CRUD           | R        | R    | ✖          |
 
 ## 라우트별 정리 (모듈 추가 가드 포함)
 
@@ -82,10 +82,10 @@ C=생성, R=조회, U=수정, D=삭제. ✔=가능, ✖=불가.
 
 scope에 따라 다른 정책 리소스를 따른다 (`src/modules/attachments.ts`):
 
-| scope | 대상 | 등록/수정/삭제 | 목록 조회(인증) |
-| --- | --- | --- | --- |
-| `site_donate` | 후원 페이지 회계 자료 | 회장단만 (`site_setting`) | 부원 이상 |
-| `activity` | 활동 페이지 자료 | manager 이상 (`activity`) | 부원 이상 |
+| scope         | 대상                  | 등록/수정/삭제            | 목록 조회(인증) |
+| ------------- | --------------------- | ------------------------- | --------------- |
+| `site_donate` | 후원 페이지 회계 자료 | 회장단만 (`site_setting`) | 부원 이상       |
+| `activity`    | 활동 페이지 자료      | manager 이상 (`activity`) | 부원 이상       |
 
 - 파일 첨부(fileUrl 세트) 또는 외부 링크(linkUrl) 중 정확히 하나로 등록한다.
 - 파일 첨부의 `fileUrl`은 우리 서비스가 발급한 공개 미디어 URL(`/api/public/media/...`, `file` 슬롯)만 허용.
@@ -95,14 +95,14 @@ scope에 따라 다른 정책 리소스를 따른다 (`src/modules/attachments.t
 
 해당 리소스의 create/update 권한을 요구한다:
 
-| 경로 | 권한 | 허용 형식 |
-| --- | --- | --- |
-| `/api/activities/presign/cover·detail` (+multipart) | manager 이상 | 이미지 |
-| `/api/exhibitions/presign/cover·detail` (+multipart) | manager 이상 | 이미지 |
-| `/api/activities/presign/file` | manager 이상 | 문서(pdf/xlsx/xls/docx/hwp/hwpx/zip) |
-| `/api/site/presign/file` | 회장단 | 문서(pdf/xlsx/xls/docx/hwp/hwpx/zip) |
-| `/api/recruiting/presign/image` | 회장단 (`site_setting`) | 이미지 |
-| `/api/users/presign/profile` (+multipart) | 부원 이상 (본인 프로필) | 이미지 |
+| 경로                                                 | 권한                    | 허용 형식                            |
+| ---------------------------------------------------- | ----------------------- | ------------------------------------ |
+| `/api/activities/presign/cover·detail` (+multipart)  | manager 이상            | 이미지                               |
+| `/api/exhibitions/presign/cover·detail` (+multipart) | manager 이상            | 이미지                               |
+| `/api/activities/presign/file`                       | manager 이상            | 문서(pdf/xlsx/xls/docx/hwp/hwpx/zip) |
+| `/api/site/presign/file`                             | 회장단                  | 문서(pdf/xlsx/xls/docx/hwp/hwpx/zip) |
+| `/api/recruiting/presign/image`                      | 회장단 (`site_setting`) | 이미지                               |
+| `/api/users/presign/profile` (+multipart)            | 부원 이상 (본인 프로필) | 이미지                               |
 
 - 멀티파트 part/complete/abort는 **본인이 발급받은 objectKey**에 대해서만 처리된다.
 - 모든 업로드는 R2 버킷 10GB 한도 초과가 예상되면 413으로 차단된다.

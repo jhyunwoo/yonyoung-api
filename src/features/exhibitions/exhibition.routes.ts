@@ -1,38 +1,44 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import HonoAppType from "../types/honoAppType";
-import { badRequest, noContent, notFound, ok } from "../lib/http/response";
-import { parseBody, parseParams } from "../lib/validation/request";
-import { AppDependencies } from "../lib/services/dependencies";
-import { requireActor, requirePermission } from "../lib/http/authz";
+import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import type HonoAppType from "../../types/honoAppType";
+import { noContent, ok } from "../../lib/http/response";
+import { type AppDependencies } from "../../lib/services/dependencies";
+import {
+  assertPermission,
+  requireAuthenticatedActor,
+} from "../../shared/http/route-guards";
+import { readValidated } from "../../shared/http/validated-input";
 import {
   recordAuditLog,
   readChangedFields,
   withUpdatedByActor,
-} from "../lib/audit";
+} from "../../lib/audit";
 import {
   createdResponse,
   dataResponse,
   errorResponses,
   jsonBody,
   noContentResponse,
-} from "../lib/openapi/responses";
+} from "../../lib/openapi/responses";
 import {
   ApiCreateExhibitionImageBatchSchema,
   ApiCreateExhibitionImageSchema,
   ApiCreateExhibitionSchema,
   ApiExhibitionImageSchema,
-  ApiListExhibitionsQuerySchema,
   ApiExhibitionSchema,
-  ApiIdParamSchema,
-  ApiImageIdParamSchema,
+  ApiListExhibitionsQuerySchema,
   ApiUpdateExhibitionImageBatchSchema,
   ApiUpdateExhibitionImageSchema,
   ApiUpdateExhibitionSchema,
-} from "../lib/openapi/schemas";
+} from "./exhibition.contract";
+import {
+  ApiIdParamSchema,
+  ApiImageIdParamSchema,
+} from "../../shared/openapi/common.contract";
 import {
   hasMeaningfulExhibitionRichText,
   sanitizeExhibitionRichText,
-} from "../lib/content/exhibition-rich-text";
+} from "../../lib/content/exhibition-rich-text";
+import { AppError } from "../../shared/errors/AppError";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -177,10 +183,16 @@ const addExhibitionImagesBatchRoute = createRoute({
   security: [{ cookieAuth: [] }],
   request: {
     params: ApiIdParamSchema,
-    body: jsonBody(ApiCreateExhibitionImageBatchSchema, "전시 이미지 일괄 추가 요청"),
+    body: jsonBody(
+      ApiCreateExhibitionImageBatchSchema,
+      "전시 이미지 일괄 추가 요청",
+    ),
   },
   responses: {
-    201: createdResponse(ApiExhibitionImageSchema.array(), "전시 이미지 일괄 생성 성공"),
+    201: createdResponse(
+      ApiExhibitionImageSchema.array(),
+      "전시 이미지 일괄 생성 성공",
+    ),
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
@@ -196,10 +208,16 @@ const updateExhibitionImagesBatchRoute = createRoute({
   security: [{ cookieAuth: [] }],
   request: {
     params: ApiIdParamSchema,
-    body: jsonBody(ApiUpdateExhibitionImageBatchSchema, "전시 이미지 일괄 수정 요청"),
+    body: jsonBody(
+      ApiUpdateExhibitionImageBatchSchema,
+      "전시 이미지 일괄 수정 요청",
+    ),
   },
   responses: {
-    200: dataResponse(ApiExhibitionImageSchema.array(), "전시 이미지 일괄 수정 성공"),
+    200: dataResponse(
+      ApiExhibitionImageSchema.array(),
+      "전시 이미지 일괄 수정 성공",
+    ),
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
@@ -229,60 +247,42 @@ export const registerExhibitionRoutes = (
   app: App,
   dependencies: AppDependencies,
 ) => {
-  app.openapi(listExhibitionsRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "exhibition", "read");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(listExhibitionsRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "exhibition", "read");
 
-    const query = ApiListExhibitionsQuerySchema.safeParse(c.req.query());
-    if (!query.success) {
-      return badRequest(c, query.error.issues.map((issue) => issue.message).join(", "));
-    }
+    const query = readValidated(c, "query", ApiListExhibitionsQuerySchema);
 
     const data = await dependencies
       .getDataService(c)
-      .listExhibitions(query.data.generationId);
+      .listExhibitions(query.generationId);
     return ok(c, data.map(sanitizeExhibitionDescriptionField));
   });
 
-  app.openapi(createExhibitionRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "exhibition", "create");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(createExhibitionRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "exhibition", "create");
 
-    const body = await parseBody(c, ApiCreateExhibitionSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
+    const body = readValidated(c, "json", ApiCreateExhibitionSchema);
 
-    const sanitizedDescription = sanitizeExhibitionRichText(body.data.description);
+    const sanitizedDescription = sanitizeExhibitionRichText(body.description);
     if (!hasMeaningfulExhibitionRichText(sanitizedDescription)) {
-      return badRequest(c, "전시 설명은 비워둘 수 없습니다.");
+      throw AppError.badRequest("전시 설명은 비워둘 수 없습니다.");
     }
 
     const data = await dependencies.getDataService(c).createExhibition({
-      ...body.data,
+      ...body,
       description: sanitizedDescription,
     });
 
     const dataService = dependencies.getDataService(c);
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "exhibition",
       resourceId: data.id,
       action: "create",
-      changedFields: readChangedFields(body.data, [
+      changedFields: readChangedFields(body, [
         "title",
         "startDate",
         "endDate",
@@ -295,76 +295,57 @@ export const registerExhibitionRoutes = (
 
     return ok(
       c,
-      withUpdatedByActor(sanitizeExhibitionDescriptionField(data), actorResult.actor),
+      withUpdatedByActor(sanitizeExhibitionDescriptionField(data), actor),
       201,
     );
   });
 
-  app.openapi(getExhibitionByIdRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "exhibition", "read");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(getExhibitionByIdRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "exhibition", "read");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const params = readValidated(c, "param", ApiIdParamSchema);
 
     const data = await dependencies
       .getDataService(c)
-      .getExhibitionById(params.data.id);
+      .getExhibitionById(params.id);
     if (!data) {
-      return notFound(c);
+      throw AppError.notFound();
     }
     return ok(c, sanitizeExhibitionDescriptionField(data));
   });
 
-  app.openapi(updateExhibitionRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "exhibition", "update");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(updateExhibitionRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "exhibition", "update");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const params = readValidated(c, "param", ApiIdParamSchema);
 
-    const body = await parseBody(c, ApiUpdateExhibitionSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
-    const nextBody = { ...body.data };
+    const body = readValidated(c, "json", ApiUpdateExhibitionSchema);
+    const nextBody = { ...body };
     if (nextBody.description !== undefined) {
-      const sanitizedDescription = sanitizeExhibitionRichText(nextBody.description);
+      const sanitizedDescription = sanitizeExhibitionRichText(
+        nextBody.description,
+      );
       if (!hasMeaningfulExhibitionRichText(sanitizedDescription)) {
-        return badRequest(c, "전시 설명은 비워둘 수 없습니다.");
+        throw AppError.badRequest("전시 설명은 비워둘 수 없습니다.");
       }
       nextBody.description = sanitizedDescription;
     }
 
     if (Object.keys(nextBody).length === 0) {
-      return badRequest(c, "수정할 필드를 하나 이상 전달해야 합니다.");
+      throw AppError.badRequest("수정할 필드를 하나 이상 전달해야 합니다.");
     }
 
     const dataService = dependencies.getDataService(c);
-    const data = await dataService.updateExhibition(params.data.id, nextBody);
+    const data = await dataService.updateExhibition(params.id, nextBody);
     if (!data) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "exhibition",
       resourceId: data.id,
       action: "update",
@@ -373,36 +354,27 @@ export const registerExhibitionRoutes = (
 
     return ok(
       c,
-      withUpdatedByActor(sanitizeExhibitionDescriptionField(data), actorResult.actor),
+      withUpdatedByActor(sanitizeExhibitionDescriptionField(data), actor),
     );
   });
 
-  app.openapi(deleteExhibitionRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "exhibition", "delete");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(deleteExhibitionRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "exhibition", "delete");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const params = readValidated(c, "param", ApiIdParamSchema);
 
     const dataService = dependencies.getDataService(c);
-    const deleted = await dataService.deleteExhibition(params.data.id);
+    const deleted = await dataService.deleteExhibition(params.id);
     if (!deleted) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "exhibition",
-      resourceId: params.data.id,
+      resourceId: params.id,
       action: "delete",
       changedFields: ["deletedAt"],
     });
@@ -411,36 +383,24 @@ export const registerExhibitionRoutes = (
   });
 
   // 전시 세부 이미지도 별도 엔드포인트로 분리해 부분 수정이 가능하도록 한다.
-  app.openapi(addExhibitionImageRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "exhibition", "update");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(addExhibitionImageRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "exhibition", "update");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
-    const body = await parseBody(c, ApiCreateExhibitionImageSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
+    const params = readValidated(c, "param", ApiIdParamSchema);
+    const body = readValidated(c, "json", ApiCreateExhibitionImageSchema);
 
     const dataService = dependencies.getDataService(c);
-    const data = await dataService.addExhibitionImage(params.data.id, body.data);
+    const data = await dataService.addExhibitionImage(params.id, body);
     if (!data) {
-      return notFound(c, "전시를 찾을 수 없습니다.");
+      throw AppError.notFound("전시를 찾을 수 없습니다.");
     }
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "exhibition",
-      resourceId: params.data.id,
+      resourceId: params.id,
       action: "update",
       changedFields: ["detailImages"],
     });
@@ -448,36 +408,24 @@ export const registerExhibitionRoutes = (
     return ok(c, data, 201);
   });
 
-  app.openapi(addExhibitionImagesBatchRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "exhibition", "update");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(addExhibitionImagesBatchRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "exhibition", "update");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
-    const body = await parseBody(c, ApiCreateExhibitionImageBatchSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
+    const params = readValidated(c, "param", ApiIdParamSchema);
+    const body = readValidated(c, "json", ApiCreateExhibitionImageBatchSchema);
 
     const dataService = dependencies.getDataService(c);
-    const data = await dataService.addExhibitionImages(params.data.id, body.data);
+    const data = await dataService.addExhibitionImages(params.id, body);
     if (!data) {
-      return notFound(c, "전시를 찾을 수 없습니다.");
+      throw AppError.notFound("전시를 찾을 수 없습니다.");
     }
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "exhibition",
-      resourceId: params.data.id,
+      resourceId: params.id,
       action: "update",
       changedFields: ["detailImages"],
     });
@@ -485,36 +433,24 @@ export const registerExhibitionRoutes = (
     return ok(c, data, 201);
   });
 
-  app.openapi(updateExhibitionImagesBatchRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "exhibition", "update");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(updateExhibitionImagesBatchRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "exhibition", "update");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
-    const body = await parseBody(c, ApiUpdateExhibitionImageBatchSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
+    const params = readValidated(c, "param", ApiIdParamSchema);
+    const body = readValidated(c, "json", ApiUpdateExhibitionImageBatchSchema);
 
     const dataService = dependencies.getDataService(c);
-    const data = await dataService.updateExhibitionImages(params.data.id, body.data);
+    const data = await dataService.updateExhibitionImages(params.id, body);
     if (!data) {
-      return notFound(c, "세부 이미지를 찾을 수 없습니다.");
+      throw AppError.notFound("세부 이미지를 찾을 수 없습니다.");
     }
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "exhibition",
-      resourceId: params.data.id,
+      resourceId: params.id,
       action: "update",
       changedFields: ["detailImages"],
     });
@@ -522,43 +458,31 @@ export const registerExhibitionRoutes = (
     return ok(c, data);
   });
 
-  app.openapi(updateExhibitionImageRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "exhibition", "update");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(updateExhibitionImageRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "exhibition", "update");
 
-    const params = parseParams(c, ApiImageIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
-    const body = await parseBody(c, ApiUpdateExhibitionImageSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
-    if (Object.keys(body.data).length === 0) {
-      return badRequest(c, "수정할 필드를 하나 이상 전달해야 합니다.");
+    const params = readValidated(c, "param", ApiImageIdParamSchema);
+    const body = readValidated(c, "json", ApiUpdateExhibitionImageSchema);
+    if (Object.keys(body).length === 0) {
+      throw AppError.badRequest("수정할 필드를 하나 이상 전달해야 합니다.");
     }
 
     const dataService = dependencies.getDataService(c);
     const data = await dataService.updateExhibitionImage(
-      params.data.id,
-      params.data.imageId,
-      body.data,
+      params.id,
+      params.imageId,
+      body,
     );
     if (!data) {
-      return notFound(c, "세부 이미지를 찾을 수 없습니다.");
+      throw AppError.notFound("세부 이미지를 찾을 수 없습니다.");
     }
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "exhibition",
-      resourceId: params.data.id,
+      resourceId: params.id,
       action: "update",
       changedFields: ["detailImages"],
     });
@@ -566,35 +490,26 @@ export const registerExhibitionRoutes = (
     return ok(c, data);
   });
 
-  app.openapi(deleteExhibitionImageRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "exhibition", "update");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(deleteExhibitionImageRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "exhibition", "update");
 
-    const params = parseParams(c, ApiImageIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const params = readValidated(c, "param", ApiImageIdParamSchema);
 
     const dataService = dependencies.getDataService(c);
     const deleted = await dataService.deleteExhibitionImage(
-      params.data.id,
-      params.data.imageId,
+      params.id,
+      params.imageId,
     );
     if (!deleted) {
-      return notFound(c, "세부 이미지를 찾을 수 없습니다.");
+      throw AppError.notFound("세부 이미지를 찾을 수 없습니다.");
     }
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "exhibition",
-      resourceId: params.data.id,
+      resourceId: params.id,
       action: "update",
       changedFields: ["detailImages"],
     });

@@ -1,38 +1,45 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import HonoAppType from "../types/honoAppType";
-import { badRequest, noContent, notFound, ok } from "../lib/http/response";
-import { parseBody, parseParams } from "../lib/validation/request";
-import { AppDependencies } from "../lib/services/dependencies";
-import { requireActor, requirePermission } from "../lib/http/authz";
+import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import type HonoAppType from "../../types/honoAppType";
+import type { Actor } from "../../lib/authorization/types";
+import { noContent, ok } from "../../lib/http/response";
+import { type AppDependencies } from "../../lib/services/dependencies";
+import { AppError } from "../../shared/errors/AppError";
+import {
+  assertPermission,
+  requireAuthenticatedActor,
+} from "../../shared/http/route-guards";
+import { readValidated } from "../../shared/http/validated-input";
 import {
   recordAuditLog,
   readChangedFields,
   withUpdatedByActor,
-} from "../lib/audit";
+} from "../../lib/audit";
 import {
   hasMeaningfulRichTextHtml,
   sanitizeRichTextHtml,
-} from "../lib/content/rich-text";
+} from "../../lib/content/rich-text";
 import {
   createdResponse,
   dataResponse,
   errorResponses,
   jsonBody,
   noContentResponse,
-} from "../lib/openapi/responses";
+} from "../../lib/openapi/responses";
 import {
   ApiActivityImageSchema,
-  ApiListActivitiesQuerySchema,
   ApiActivitySchema,
   ApiCreateActivityImageBatchSchema,
   ApiCreateActivityImageSchema,
   ApiCreateActivitySchema,
-  ApiIdParamSchema,
-  ApiImageIdParamSchema,
+  ApiListActivitiesQuerySchema,
   ApiUpdateActivityImageBatchSchema,
   ApiUpdateActivityImageSchema,
   ApiUpdateActivitySchema,
-} from "../lib/openapi/schemas";
+} from "./activity.contract";
+import {
+  ApiIdParamSchema,
+  ApiImageIdParamSchema,
+} from "../../shared/openapi/common.contract";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -173,10 +180,16 @@ const addActivityImagesBatchRoute = createRoute({
   security: [{ cookieAuth: [] }],
   request: {
     params: ApiIdParamSchema,
-    body: jsonBody(ApiCreateActivityImageBatchSchema, "활동 이미지 일괄 추가 요청"),
+    body: jsonBody(
+      ApiCreateActivityImageBatchSchema,
+      "활동 이미지 일괄 추가 요청",
+    ),
   },
   responses: {
-    201: createdResponse(ApiActivityImageSchema.array(), "활동 이미지 일괄 생성 성공"),
+    201: createdResponse(
+      ApiActivityImageSchema.array(),
+      "활동 이미지 일괄 생성 성공",
+    ),
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
@@ -192,10 +205,16 @@ const updateActivityImagesBatchRoute = createRoute({
   security: [{ cookieAuth: [] }],
   request: {
     params: ApiIdParamSchema,
-    body: jsonBody(ApiUpdateActivityImageBatchSchema, "활동 이미지 일괄 수정 요청"),
+    body: jsonBody(
+      ApiUpdateActivityImageBatchSchema,
+      "활동 이미지 일괄 수정 요청",
+    ),
   },
   responses: {
-    200: dataResponse(ApiActivityImageSchema.array(), "활동 이미지 일괄 수정 성공"),
+    200: dataResponse(
+      ApiActivityImageSchema.array(),
+      "활동 이미지 일괄 수정 성공",
+    ),
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
@@ -221,62 +240,67 @@ const deleteActivityImageRoute = createRoute({
   },
 });
 
+/** 설명은 sanitize 후에도 의미 있는 내용이 남아 있어야 한다. */
+const requireMeaningfulDescription = (description: string): string => {
+  const sanitized = sanitizeRichTextHtml(description);
+  if (!hasMeaningfulRichTextHtml(sanitized)) {
+    throw AppError.badRequest("활동 설명은 비워둘 수 없습니다.");
+  }
+  return sanitized;
+};
+
+// 세부 이미지 변경은 어떤 연산이든 상위 활동의 detailImages 수정으로 기록한다.
+const recordDetailImageAudit = (
+  dataService: ReturnType<AppDependencies["getDataService"]>,
+  actor: Actor,
+  activityId: string,
+) =>
+  recordAuditLog({
+    dataService,
+    actor,
+    resourceType: "activity",
+    resourceId: activityId,
+    action: "update",
+    changedFields: ["detailImages"],
+  });
+
 export const registerActivityRoutes = (
   app: App,
   dependencies: AppDependencies,
 ) => {
-  app.openapi(listActivitiesRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "activity", "read");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(listActivitiesRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "activity", "read");
 
-    const query = ApiListActivitiesQuerySchema.safeParse(c.req.query());
-    if (!query.success) {
-      return badRequest(c, query.error.issues.map((issue) => issue.message).join(", "));
-    }
+    const { generationId } = readValidated(
+      c,
+      "query",
+      ApiListActivitiesQuerySchema,
+    );
 
-    const data = await dependencies.getDataService(c).listActivities(query.data.generationId);
+    const data = await dependencies
+      .getDataService(c)
+      .listActivities(generationId);
     return ok(c, data.map(sanitizeActivityDescriptionField));
   });
 
-  app.openapi(createActivityRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "activity", "create");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(createActivityRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "activity", "create");
 
-    const body = await parseBody(c, ApiCreateActivitySchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
-
-    const sanitizedDescription = sanitizeRichTextHtml(body.data.description);
-    if (!hasMeaningfulRichTextHtml(sanitizedDescription)) {
-      return badRequest(c, "활동 설명은 비워둘 수 없습니다.");
-    }
+    const input = readValidated(c, "json", ApiCreateActivitySchema);
+    const description = requireMeaningfulDescription(input.description);
 
     const dataService = dependencies.getDataService(c);
-    const data = await dataService.createActivity({
-      ...body.data,
-      description: sanitizedDescription,
-    });
+    const data = await dataService.createActivity({ ...input, description });
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor,
       resourceType: "activity",
       resourceId: data.id,
       action: "create",
-      changedFields: readChangedFields(body.data, [
+      changedFields: readChangedFields(input, [
         "title",
         "description",
         "startDate",
@@ -288,112 +312,78 @@ export const registerActivityRoutes = (
 
     return ok(
       c,
-      withUpdatedByActor(sanitizeActivityDescriptionField(data), actorResult.actor),
+      withUpdatedByActor(sanitizeActivityDescriptionField(data), actor),
       201,
     );
   });
 
-  app.openapi(getActivityByIdRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "activity", "read");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(getActivityByIdRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "activity", "read");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const { id } = readValidated(c, "param", ApiIdParamSchema);
 
-    const data = await dependencies.getDataService(c).getActivityById(params.data.id);
+    const data = await dependencies.getDataService(c).getActivityById(id);
     if (!data) {
-      return notFound(c);
+      throw AppError.notFound();
     }
     return ok(c, sanitizeActivityDescriptionField(data));
   });
 
-  app.openapi(updateActivityRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "activity", "update");
-    if (denied) {
-      return denied;
+  app.openapi(updateActivityRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "activity", "update");
+
+    const { id } = readValidated(c, "param", ApiIdParamSchema);
+    const input = readValidated(c, "json", ApiUpdateActivitySchema);
+
+    const patch = { ...input };
+    if (patch.description !== undefined) {
+      patch.description = requireMeaningfulDescription(patch.description);
     }
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
-
-    const body = await parseBody(c, ApiUpdateActivitySchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
-    const nextBody = { ...body.data };
-    if (nextBody.description !== undefined) {
-      const sanitizedDescription = sanitizeRichTextHtml(nextBody.description);
-      if (!hasMeaningfulRichTextHtml(sanitizedDescription)) {
-        return badRequest(c, "활동 설명은 비워둘 수 없습니다.");
-      }
-      nextBody.description = sanitizedDescription;
-    }
-
-    if (Object.keys(nextBody).length === 0) {
-      return badRequest(c, "수정할 필드를 하나 이상 전달해야 합니다.");
+    if (Object.keys(patch).length === 0) {
+      throw AppError.badRequest("수정할 필드를 하나 이상 전달해야 합니다.");
     }
 
     const dataService = dependencies.getDataService(c);
-    const data = await dataService.updateActivity(params.data.id, nextBody);
+    const data = await dataService.updateActivity(id, patch);
     if (!data) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor,
       resourceType: "activity",
       resourceId: data.id,
       action: "update",
-      changedFields: readChangedFields(nextBody, ["updatedAt"]),
+      changedFields: readChangedFields(patch, ["updatedAt"]),
     });
 
     return ok(
       c,
-      withUpdatedByActor(sanitizeActivityDescriptionField(data), actorResult.actor),
+      withUpdatedByActor(sanitizeActivityDescriptionField(data), actor),
     );
   });
 
-  app.openapi(deleteActivityRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "activity", "delete");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(deleteActivityRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "activity", "delete");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const { id } = readValidated(c, "param", ApiIdParamSchema);
 
     const dataService = dependencies.getDataService(c);
-    const deleted = await dataService.deleteActivity(params.data.id);
+    const deleted = await dataService.deleteActivity(id);
     if (!deleted) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor,
       resourceType: "activity",
-      resourceId: params.data.id,
+      resourceId: id,
       action: "delete",
       changedFields: ["deletedAt"],
     });
@@ -402,193 +392,94 @@ export const registerActivityRoutes = (
   });
 
   // 세부 이미지는 활동 본문 수정과 동일 권한으로 분리 관리한다.
-  app.openapi(addActivityImageRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "activity", "update");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(addActivityImageRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "activity", "update");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
-    const body = await parseBody(c, ApiCreateActivityImageSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
+    const { id } = readValidated(c, "param", ApiIdParamSchema);
+    const input = readValidated(c, "json", ApiCreateActivityImageSchema);
 
     const dataService = dependencies.getDataService(c);
-    const data = await dataService.addActivityImage(params.data.id, body.data);
+    const data = await dataService.addActivityImage(id, input);
     if (!data) {
-      return notFound(c, "활동을 찾을 수 없습니다.");
+      throw AppError.notFound("활동을 찾을 수 없습니다.");
     }
 
-    await recordAuditLog({
-      dataService,
-      actor: actorResult.actor,
-      resourceType: "activity",
-      resourceId: params.data.id,
-      action: "update",
-      changedFields: ["detailImages"],
-    });
+    await recordDetailImageAudit(dataService, actor, id);
 
     return ok(c, data, 201);
   });
 
-  app.openapi(addActivityImagesBatchRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "activity", "update");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(addActivityImagesBatchRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "activity", "update");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
-    const body = await parseBody(c, ApiCreateActivityImageBatchSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
+    const { id } = readValidated(c, "param", ApiIdParamSchema);
+    const input = readValidated(c, "json", ApiCreateActivityImageBatchSchema);
 
     const dataService = dependencies.getDataService(c);
-    const data = await dataService.addActivityImages(params.data.id, body.data);
+    const data = await dataService.addActivityImages(id, input);
     if (!data) {
-      return notFound(c, "활동을 찾을 수 없습니다.");
+      throw AppError.notFound("활동을 찾을 수 없습니다.");
     }
 
-    await recordAuditLog({
-      dataService,
-      actor: actorResult.actor,
-      resourceType: "activity",
-      resourceId: params.data.id,
-      action: "update",
-      changedFields: ["detailImages"],
-    });
+    await recordDetailImageAudit(dataService, actor, id);
 
     return ok(c, data, 201);
   });
 
-  app.openapi(updateActivityImagesBatchRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "activity", "update");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(updateActivityImagesBatchRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "activity", "update");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
-    const body = await parseBody(c, ApiUpdateActivityImageBatchSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
+    const { id } = readValidated(c, "param", ApiIdParamSchema);
+    const input = readValidated(c, "json", ApiUpdateActivityImageBatchSchema);
 
     const dataService = dependencies.getDataService(c);
-    const data = await dataService.updateActivityImages(params.data.id, body.data);
+    const data = await dataService.updateActivityImages(id, input);
     if (!data) {
-      return notFound(c, "세부 이미지를 찾을 수 없습니다.");
+      throw AppError.notFound("세부 이미지를 찾을 수 없습니다.");
     }
 
-    await recordAuditLog({
-      dataService,
-      actor: actorResult.actor,
-      resourceType: "activity",
-      resourceId: params.data.id,
-      action: "update",
-      changedFields: ["detailImages"],
-    });
+    await recordDetailImageAudit(dataService, actor, id);
 
     return ok(c, data);
   });
 
-  app.openapi(updateActivityImageRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "activity", "update");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(updateActivityImageRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "activity", "update");
 
-    const params = parseParams(c, ApiImageIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
-    const body = await parseBody(c, ApiUpdateActivityImageSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
-    if (Object.keys(body.data).length === 0) {
-      return badRequest(c, "수정할 필드를 하나 이상 전달해야 합니다.");
+    const { id, imageId } = readValidated(c, "param", ApiImageIdParamSchema);
+    const input = readValidated(c, "json", ApiUpdateActivityImageSchema);
+    if (Object.keys(input).length === 0) {
+      throw AppError.badRequest("수정할 필드를 하나 이상 전달해야 합니다.");
     }
 
     const dataService = dependencies.getDataService(c);
-    const data = await dataService.updateActivityImage(
-      params.data.id,
-      params.data.imageId,
-      body.data,
-    );
+    const data = await dataService.updateActivityImage(id, imageId, input);
     if (!data) {
-      return notFound(c, "세부 이미지를 찾을 수 없습니다.");
+      throw AppError.notFound("세부 이미지를 찾을 수 없습니다.");
     }
 
-    await recordAuditLog({
-      dataService,
-      actor: actorResult.actor,
-      resourceType: "activity",
-      resourceId: params.data.id,
-      action: "update",
-      changedFields: ["detailImages"],
-    });
+    await recordDetailImageAudit(dataService, actor, id);
 
     return ok(c, data);
   });
 
-  app.openapi(deleteActivityImageRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
-    const denied = requirePermission(c, actorResult.actor, "activity", "delete");
-    if (denied) {
-      return denied;
-    }
+  app.openapi(deleteActivityImageRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+    assertPermission(actor, "activity", "delete");
 
-    const params = parseParams(c, ApiImageIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const { id, imageId } = readValidated(c, "param", ApiImageIdParamSchema);
 
     const dataService = dependencies.getDataService(c);
-    const deleted = await dataService.deleteActivityImage(
-      params.data.id,
-      params.data.imageId,
-    );
+    const deleted = await dataService.deleteActivityImage(id, imageId);
     if (!deleted) {
-      return notFound(c, "세부 이미지를 찾을 수 없습니다.");
+      throw AppError.notFound("세부 이미지를 찾을 수 없습니다.");
     }
 
-    await recordAuditLog({
-      dataService,
-      actor: actorResult.actor,
-      resourceType: "activity",
-      resourceId: params.data.id,
-      action: "update",
-      changedFields: ["detailImages"],
-    });
+    await recordDetailImageAudit(dataService, actor, id);
 
     return noContent(c);
   });

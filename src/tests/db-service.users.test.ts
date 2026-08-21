@@ -1,7 +1,7 @@
 import type { SQL } from "drizzle-orm";
 import { SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { generations, session, user } from "../lib/db/schema";
+import { generations, session, user } from "../platform/db/schema";
 
 const createDBMock = vi.hoisted(() => vi.fn());
 
@@ -9,7 +9,7 @@ vi.mock("../lib/db", () => ({
   default: createDBMock,
 }));
 
-import { createDbDataService } from "../lib/services/db-service";
+import { createDbDataService } from "../platform/db/data-service-composition";
 
 const toSql = (value: unknown): string =>
   new SQLiteSyncDialect().sqlToQuery(value as SQL).sql;

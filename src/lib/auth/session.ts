@@ -1,10 +1,10 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
-import { Context } from "hono";
+import { type Context } from "hono";
 import { normalizeRole } from "../authorization/policy";
-import { Actor } from "../authorization/types";
-import { generations, user, userGenerations } from "../db/schema";
+import { type Actor } from "../authorization/types";
+import { generations, user, userGenerations } from "../../platform/db/schema";
 import { createAuth } from "../auth";
-import HonoAppType from "../../types/honoAppType";
+import type HonoAppType from "../../types/honoAppType";
 import { getDbClient } from "../db/factory";
 import { resolveD1Database } from "../../infra/db/client";
 

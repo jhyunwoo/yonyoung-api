@@ -1,18 +1,23 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import type HonoAppType from "../types/honoAppType";
-import { badRequest, forbidden, ok } from "../lib/http/response";
-import type { AppDependencies } from "../lib/services/dependencies";
-import { requireActor } from "../lib/http/authz";
-import { parseBody } from "../lib/validation/request";
+import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import type HonoAppType from "../../types/honoAppType";
+import { ok } from "../../lib/http/response";
+import type { AppDependencies } from "../../lib/services/dependencies";
+import { requireAuthenticatedActor } from "../../shared/http/route-guards";
+import { readValidated } from "../../shared/http/validated-input";
 import {
   hasMeaningfulRichTextHtml,
   sanitizeRichTextHtml,
-} from "../lib/content/rich-text";
-import { dataResponse, errorResponses, jsonBody } from "../lib/openapi/responses";
+} from "../../lib/content/rich-text";
+import {
+  dataResponse,
+  errorResponses,
+  jsonBody,
+} from "../../lib/openapi/responses";
 import {
   ApiRecruitingPlanSchema,
   ApiUpsertCurrentRecruitingPlanSchema,
-} from "../lib/openapi/schemas";
+} from "./recruiting-plan.contract";
+import { AppError } from "../../shared/errors/AppError";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -66,51 +71,48 @@ export const registerRecruitingPlanRoutes = (
   app: App,
   dependencies: AppDependencies,
 ) => {
-  app.openapi(getCurrentRecruitingPlanRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
+  app.openapi(getCurrentRecruitingPlanRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+
+    if (!isPrivilegedActor(actor.role)) {
+      throw AppError.forbidden();
     }
 
-    if (!isPrivilegedActor(actorResult.actor.role)) {
-      return forbidden(c);
-    }
-
-    const data = await dependencies.getDataService(c).getCurrentRecruitingPlan();
+    const data = await dependencies
+      .getDataService(c)
+      .getCurrentRecruitingPlan();
     return ok(c, data ? sanitizeRecruitingPlanContentField(data) : null);
   });
 
-  app.openapi(upsertCurrentRecruitingPlanRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
+  app.openapi(upsertCurrentRecruitingPlanRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+
+    if (!isPrivilegedActor(actor.role)) {
+      throw AppError.forbidden();
     }
 
-    if (!isPrivilegedActor(actorResult.actor.role)) {
-      return forbidden(c);
-    }
+    const body = readValidated(c, "json", ApiUpsertCurrentRecruitingPlanSchema);
 
-    const body = await parseBody(c, ApiUpsertCurrentRecruitingPlanSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
-
-    const sanitizedContent = sanitizeRichTextHtml(body.data.content);
+    const sanitizedContent = sanitizeRichTextHtml(body.content);
     if (!hasMeaningfulRichTextHtml(sanitizedContent)) {
-      return badRequest(c, "세부 내용은 비워둘 수 없습니다.");
+      throw AppError.badRequest("세부 내용은 비워둘 수 없습니다.");
     }
 
-    if (body.data.recruitmentStartAt > body.data.recruitmentEndAt) {
-      return badRequest(c, "모집 시작 일시는 모집 종료 일시보다 늦을 수 없습니다.");
+    if (body.recruitmentStartAt > body.recruitmentEndAt) {
+      throw AppError.badRequest(
+        "모집 시작 일시는 모집 종료 일시보다 늦을 수 없습니다.",
+      );
     }
 
-    const data = await dependencies.getDataService(c).upsertCurrentRecruitingPlan({
-      title: body.data.title.trim(),
-      content: sanitizedContent,
-      promotionImageUrls: body.data.promotionImageUrls,
-      recruitmentStartAt: new Date(body.data.recruitmentStartAt),
-      recruitmentEndAt: new Date(body.data.recruitmentEndAt),
-    });
+    const data = await dependencies
+      .getDataService(c)
+      .upsertCurrentRecruitingPlan({
+        title: body.title.trim(),
+        content: sanitizedContent,
+        promotionImageUrls: body.promotionImageUrls,
+        recruitmentStartAt: new Date(body.recruitmentStartAt),
+        recruitmentEndAt: new Date(body.recruitmentEndAt),
+      });
     return ok(c, sanitizeRecruitingPlanContentField(data));
   });
 };

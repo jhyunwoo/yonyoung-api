@@ -1,17 +1,22 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import {
   ApiDashboardPageViewStatsSchema,
   ApiPageViewStatsSchema,
   ApiRecordPageViewRequestSchema,
-} from "../lib/openapi/schemas";
-import { dataResponse, errorResponses, jsonBody } from "../lib/openapi/responses";
-import { z } from "@hono/zod-openapi";
-import { badRequest, forbidden, ok } from "../lib/http/response";
-import { AppDependencies } from "../lib/services/dependencies";
-import { requireActor } from "../lib/http/authz";
-import { isManagerLikeRole } from "../lib/authorization/policy";
-import HonoAppType from "../types/honoAppType";
-import { normalizePageViewResourceId } from "../lib/views/page-view-target";
+} from "./page-view.contract";
+import {
+  dataResponse,
+  errorResponses,
+  jsonBody,
+} from "../../lib/openapi/responses";
+import { z } from "../../shared/openapi/zod";
+import { ok } from "../../lib/http/response";
+import { type AppDependencies } from "../../lib/services/dependencies";
+import { requireAuthenticatedActor } from "../../shared/http/route-guards";
+import { isManagerLikeRole } from "../../lib/authorization/policy";
+import type HonoAppType from "../../types/honoAppType";
+import { normalizePageViewResourceId } from "../../lib/views/page-view-target";
+import { AppError } from "../../shared/errors/AppError";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -60,34 +65,33 @@ const getDashboardPageViewStatsRoute = createRoute({
   operationId: "getDashboardPageViewStats",
   security: [{ cookieAuth: [] }],
   responses: {
-    200: dataResponse(ApiDashboardPageViewStatsSchema, "대시보드 방문 통계 조회 성공"),
+    200: dataResponse(
+      ApiDashboardPageViewStatsSchema,
+      "대시보드 방문 통계 조회 성공",
+    ),
     401: errorResponses[401],
     403: errorResponses[403],
   },
 });
 
-/**
- * registerPageViewRoutes 생성/등록 절차를 수행해 시스템 상태를 갱신합니다.
- * @param app 함수 로직에서 사용하는 입력값입니다.
- * @param dependencies 함수 로직에서 사용하는 입력값입니다.
- * @returns 처리 결과 값을 반환합니다.
- * @remarks fire-and-forget 방식이므로 기록 단계의 에러는 무시하고 항상 200으로 응답합니다.
- */
+// 조회수 기록은 fire-and-forget이다. 기록 단계의 실패는 무시하고 항상 200으로 응답한다.
 export const registerPageViewRoutes = (
   app: App,
   dependencies: AppDependencies,
 ) => {
-  app.openapi(recordPageViewRoute, async (c): Promise<any> => {
+  app.openapi(recordPageViewRoute, async (c) => {
     let body: unknown;
     try {
       body = await c.req.json();
     } catch {
-      return badRequest(c, "잘못된 요청 본문입니다.");
+      throw AppError.badRequest("잘못된 요청 본문입니다.");
     }
 
     const parsed = ApiRecordPageViewRequestSchema.safeParse(body);
     if (!parsed.success) {
-      return badRequest(c, parsed.error.issues[0]?.message ?? "잘못된 요청입니다.");
+      throw AppError.badRequest(
+        parsed.error.issues[0]?.message ?? "잘못된 요청입니다.",
+      );
     }
 
     if (!(await dependencies.allowPageViewWrite(c))) {
@@ -132,31 +136,27 @@ export const registerPageViewRoutes = (
     return c.json({ ok: true } as const, 200);
   });
 
-  app.openapi(getPageViewStatsRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(getPageViewStatsRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    if (!isManagerLikeRole(actorResult.actor.role)) {
-      return forbidden(c);
+    if (!isManagerLikeRole(actor.role)) {
+      throw AppError.forbidden();
     }
 
     const stats = await dependencies.getDataService(c).getPageViewStats();
     return ok(c, stats);
   });
 
-  app.openapi(getDashboardPageViewStatsRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
+  app.openapi(getDashboardPageViewStatsRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+
+    if (!isManagerLikeRole(actor.role)) {
+      throw AppError.forbidden();
     }
 
-    if (!isManagerLikeRole(actorResult.actor.role)) {
-      return forbidden(c);
-    }
-
-    const stats = await dependencies.getDataService(c).getDashboardPageViewStats();
+    const stats = await dependencies
+      .getDataService(c)
+      .getDashboardPageViewStats();
     return ok(c, stats);
   });
 };

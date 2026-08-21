@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from "hono";
-import type HonoAppType from "../types/honoAppType";
-import type { AppDependencies } from "../lib/services/dependencies";
+import type HonoAppType from "../../types/honoAppType";
+import type { AppDependencies } from "../../lib/services/dependencies";
 
 const SKIP_SESSION_PREFIXES = [
   "/api/auth",

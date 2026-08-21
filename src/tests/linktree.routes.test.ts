@@ -11,9 +11,9 @@ import {
   readJson,
 } from "./test-helpers";
 
-describe("linktree routes", /** describe 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => {
-  it("member 계열 사용자는 링크트리 목록 조회가 가능하다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const listLinktrees = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => [createLinktree()]);
+describe("linktree routes",() => {
+  it("member 계열 사용자는 링크트리 목록 조회가 가능하다",async () => {
+    const listLinktrees = fn(async () => [createLinktree()]);
     const app = createTestApp({
       actor: createActor("associate_member"),
       dataService: createDataServiceMock({ listLinktrees }),
@@ -27,8 +27,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     expect(body.data[0]?.id).toBe(IDs.linktree);
   });
 
-  it("member 계열 사용자는 링크트리를 생성할 수 없다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const createLinktreeMock = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createLinktree());
+  it("member 계열 사용자는 링크트리를 생성할 수 없다",async () => {
+    const createLinktreeMock = fn(async () => createLinktree());
     const app = createTestApp({
       actor: createActor("regular_member"),
       dataService: createDataServiceMock({ createLinktree: createLinktreeMock }),
@@ -45,7 +45,7 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     expect(createLinktreeMock).not.toHaveBeenCalled();
   });
 
-  it("링크트리 생성 본문이 유효하지 않으면 400을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("링크트리 생성 본문이 유효하지 않으면 400을 반환한다",async () => {
     const app = createTestApp({ actor: createActor("manager", IDs.manager) });
 
     const response = await app.request("/api/linktree", {
@@ -58,8 +58,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("manager는 링크트리를 생성할 수 있다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const createLinktreeMock = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createLinktree({ name: "new-linktree" }));
+  it("manager는 링크트리를 생성할 수 있다",async () => {
+    const createLinktreeMock = fn(async () => createLinktree({ name: "new-linktree" }));
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ createLinktree: createLinktreeMock }),
@@ -98,7 +98,7 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     expect(createLinktreeMock).toHaveBeenCalledWith({ name: "vp-new-linktree" });
   });
 
-  it("링크트리 상세 조회에서 UUID가 유효하지 않으면 400을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("링크트리 상세 조회에서 UUID가 유효하지 않으면 400을 반환한다",async () => {
     const app = createTestApp({ actor: createActor("manager", IDs.manager) });
 
     const response = await app.request("/api/linktree/not-a-uuid");
@@ -106,8 +106,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("존재하지 않는 링크트리 상세 조회는 404를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const getLinktreeById = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => null);
+  it("존재하지 않는 링크트리 상세 조회는 404를 반환한다",async () => {
+    const getLinktreeById = fn(async () => null);
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ getLinktreeById }),
@@ -132,7 +132,7 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     expect(body.data.id).toBe(IDs.linktree);
   });
 
-  it("링크트리 수정 본문이 비어 있으면 400을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("링크트리 수정 본문이 비어 있으면 400을 반환한다",async () => {
     const app = createTestApp({ actor: createActor("manager", IDs.manager) });
 
     const response = await app.request(`/api/linktree/${IDs.linktree}`, {
@@ -145,8 +145,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("존재하지 않는 링크트리 수정은 404를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const updateLinktree = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => null);
+  it("존재하지 않는 링크트리 수정은 404를 반환한다",async () => {
+    const updateLinktree = fn(async () => null);
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ updateLinktree }),
@@ -162,8 +162,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     await expectErrorCode(response, "NOT_FOUND");
   });
 
-  it("manager는 링크트리를 수정할 수 있다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const updateLinktree = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createLinktree({ name: "updated" }));
+  it("manager는 링크트리를 수정할 수 있다",async () => {
+    const updateLinktree = fn(async () => createLinktree({ name: "updated" }));
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ updateLinktree }),
@@ -201,8 +201,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     });
   });
 
-  it("member 계열 사용자는 링크트리 삭제 권한이 없다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const deleteLinktree = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => true);
+  it("member 계열 사용자는 링크트리 삭제 권한이 없다",async () => {
+    const deleteLinktree = fn(async () => true);
     const app = createTestApp({
       actor: createActor("regular_member"),
       dataService: createDataServiceMock({ deleteLinktree }),
@@ -217,8 +217,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     expect(deleteLinktree).not.toHaveBeenCalled();
   });
 
-  it("존재하지 않는 링크트리 삭제는 404를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const deleteLinktree = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => false);
+  it("존재하지 않는 링크트리 삭제는 404를 반환한다",async () => {
+    const deleteLinktree = fn(async () => false);
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ deleteLinktree }),
@@ -232,8 +232,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     await expectErrorCode(response, "NOT_FOUND");
   });
 
-  it("manager는 링크트리를 삭제할 수 있다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const deleteLinktree = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => true);
+  it("manager는 링크트리를 삭제할 수 있다",async () => {
+    const deleteLinktree = fn(async () => true);
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ deleteLinktree }),
@@ -247,8 +247,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     expect(deleteLinktree).toHaveBeenCalledWith(IDs.linktree);
   });
 
-  it("member 계열 사용자는 링크 아이템 추가가 불가하다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const addLinktreeItem = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createLinktreeItem());
+  it("member 계열 사용자는 링크 아이템 추가가 불가하다",async () => {
+    const addLinktreeItem = fn(async () => createLinktreeItem());
     const app = createTestApp({
       actor: createActor("regular_member"),
       dataService: createDataServiceMock({ addLinktreeItem }),
@@ -268,7 +268,7 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     expect(addLinktreeItem).not.toHaveBeenCalled();
   });
 
-  it("링크 아이템 생성 본문이 유효하지 않으면 400을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("링크 아이템 생성 본문이 유효하지 않으면 400을 반환한다",async () => {
     const app = createTestApp({ actor: createActor("manager", IDs.manager) });
 
     const response = await app.request(`/api/linktree/${IDs.linktree}/items`, {
@@ -281,8 +281,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("상위 링크트리가 없으면 링크 아이템 생성 시 404를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const addLinktreeItem = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => null);
+  it("상위 링크트리가 없으면 링크 아이템 생성 시 404를 반환한다",async () => {
+    const addLinktreeItem = fn(async () => null);
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ addLinktreeItem }),
@@ -302,8 +302,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     expect(body.error.message).toContain("링크트리");
   });
 
-  it("manager는 링크 아이템을 생성할 수 있다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const addLinktreeItem = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createLinktreeItem());
+  it("manager는 링크 아이템을 생성할 수 있다",async () => {
+    const addLinktreeItem = fn(async () => createLinktreeItem());
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ addLinktreeItem }),
@@ -352,7 +352,7 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     expect(addLinktreeItem).toHaveBeenCalledWith(IDs.linktree, payload);
   });
 
-  it("링크 아이템 수정 본문이 비어 있으면 400을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("링크 아이템 수정 본문이 비어 있으면 400을 반환한다",async () => {
     const app = createTestApp({ actor: createActor("manager", IDs.manager) });
 
     const response = await app.request(
@@ -368,8 +368,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("존재하지 않는 링크 아이템 수정은 404를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const updateLinktreeItem = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => null);
+  it("존재하지 않는 링크 아이템 수정은 404를 반환한다",async () => {
+    const updateLinktreeItem = fn(async () => null);
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ updateLinktreeItem }),
@@ -389,8 +389,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     expect(body.error.message).toContain("링크 아이템");
   });
 
-  it("manager는 링크 아이템을 수정할 수 있다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const updateLinktreeItem = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createLinktreeItem({ name: "updated" }));
+  it("manager는 링크 아이템을 수정할 수 있다",async () => {
+    const updateLinktreeItem = fn(async () => createLinktreeItem({ name: "updated" }));
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ updateLinktreeItem }),
@@ -445,8 +445,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     );
   });
 
-  it("member 계열 사용자는 링크 아이템 삭제가 불가하다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const deleteLinktreeItem = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => true);
+  it("member 계열 사용자는 링크 아이템 삭제가 불가하다",async () => {
+    const deleteLinktreeItem = fn(async () => true);
     const app = createTestApp({
       actor: createActor("regular_member"),
       dataService: createDataServiceMock({ deleteLinktreeItem }),
@@ -464,8 +464,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     expect(deleteLinktreeItem).not.toHaveBeenCalled();
   });
 
-  it("존재하지 않는 링크 아이템 삭제는 404를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const deleteLinktreeItem = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => false);
+  it("존재하지 않는 링크 아이템 삭제는 404를 반환한다",async () => {
+    const deleteLinktreeItem = fn(async () => false);
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ deleteLinktreeItem }),
@@ -483,8 +483,8 @@ describe("linktree routes", /** describe 실행 과정에서 필요한 연산을
     expect(body.error.message).toContain("링크 아이템");
   });
 
-  it("manager는 링크 아이템을 삭제할 수 있다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const deleteLinktreeItem = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => true);
+  it("manager는 링크 아이템을 삭제할 수 있다",async () => {
+    const deleteLinktreeItem = fn(async () => true);
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ deleteLinktreeItem }),

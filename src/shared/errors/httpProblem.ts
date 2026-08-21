@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { ApiErrorCode } from "../../shared/api-contracts";
-import { AppError } from "./AppError";
+import { type AppError } from "./AppError";
 import { resolveApiErrorCode, type ErrorCode } from "./errorCodes";
 
 const DEFAULT_INTERNAL_MESSAGE = "서버 내부 오류가 발생했습니다.";
@@ -60,7 +60,10 @@ const toLegacyEnvelope = (
   requestId: string,
   problem: ProblemDocument,
 ): ErrorEnvelope => {
-  const apiCode = resolveApiErrorCode(problem.code as ErrorCode, problem.status);
+  const apiCode = resolveApiErrorCode(
+    problem.code as ErrorCode,
+    problem.status,
+  );
   return {
     error: {
       code: apiCode,
@@ -78,10 +81,7 @@ export const toErrorResponse = (c: Context, error: AppError): Response => {
   return c.json(envelope, problem.status as never);
 };
 
-export const toErrorEnvelope = (
-  c: Context,
-  error: AppError,
-): ErrorEnvelope => {
+export const toErrorEnvelope = (c: Context, error: AppError): ErrorEnvelope => {
   const requestId = readRequestId(c);
   const problem = toProblemDocument(c, error, requestId);
   return toLegacyEnvelope(requestId, problem);

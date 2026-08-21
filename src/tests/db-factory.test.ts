@@ -4,7 +4,7 @@ vi.mock("../lib/db", () => ({
   default: vi.fn((database: D1Database) => ({ database, kind: "client" })),
 }));
 
-vi.mock("../lib/services/db-service", () => ({
+vi.mock("../platform/db/data-service-composition", () => ({
   createDbDataService: vi.fn((database: D1Database) => ({
     database,
     kind: "service",
@@ -13,7 +13,7 @@ vi.mock("../lib/services/db-service", () => ({
 
 import createDB from "../lib/db";
 import { getDbClient, getDbDataService } from "../lib/db/factory";
-import { createDbDataService } from "../lib/services/db-service";
+import { createDbDataService } from "../platform/db/data-service-composition";
 
 const createDatabase = (): D1Database => {
   return {} as D1Database;

@@ -10,8 +10,8 @@ import {
   readJson,
 } from "./test-helpers";
 
-describe("generation routes", /** describe 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ () => {
-  it("인증되지 않은 요청은 401을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+describe("generation routes",() => {
+  it("인증되지 않은 요청은 401을 반환한다",async () => {
     const app = createTestApp({ actor: null });
     const response = await app.request("/api/generations");
 
@@ -19,8 +19,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     await expectErrorCode(response, "UNAUTHORIZED");
   });
 
-  it("member 계열 사용자는 generation 목록 조회가 가능하다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const listGenerations = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => [createGeneration()]);
+  it("member 계열 사용자는 generation 목록 조회가 가능하다",async () => {
+    const listGenerations = fn(async () => [createGeneration()]);
     const app = createTestApp({
       actor: createActor("regular_member"),
       dataService: createDataServiceMock({ listGenerations }),
@@ -39,8 +39,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     expect(listGenerations).toHaveBeenCalledTimes(1);
   });
 
-  it("manager는 generation 생성 권한이 없어 403을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const createGenerationMock = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createGeneration());
+  it("manager는 generation 생성 권한이 없어 403을 반환한다",async () => {
+    const createGenerationMock = fn(async () => createGeneration());
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ createGeneration: createGenerationMock }),
@@ -62,7 +62,7 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     expect(createGenerationMock).not.toHaveBeenCalled();
   });
 
-  it("생성 요청 본문이 잘못되면 400을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("생성 요청 본문이 잘못되면 400을 반환한다",async () => {
     const app = createTestApp({ actor: createActor("president", IDs.president) });
 
     const response = await app.request("/api/generations", {
@@ -77,8 +77,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("president는 generation을 생성할 수 있다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const createGenerationMock = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createGeneration({ name: "11기", sortOrder: 11 }));
+  it("president는 generation을 생성할 수 있다",async () => {
+    const createGenerationMock = fn(async () => createGeneration({ name: "11기", sortOrder: 11 }));
     const app = createTestApp({
       actor: createActor("president", IDs.president),
       dataService: createDataServiceMock({ createGeneration: createGenerationMock }),
@@ -103,8 +103,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     expect(createGenerationMock).toHaveBeenCalledWith(payload);
   });
 
-  it("generation 생성 시 UNIQUE 충돌은 409를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const createGenerationMock = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("generation 생성 시 UNIQUE 충돌은 409를 반환한다",async () => {
+    const createGenerationMock = fn(async () => {
       throw new Error("UNIQUE constraint failed: generations.sort_order");
     });
     const app = createTestApp({
@@ -127,8 +127,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     await expectErrorCode(response, "CONFLICT");
   });
 
-  it("generation 생성 시 알 수 없는 예외는 500을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const createGenerationMock = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("generation 생성 시 알 수 없는 예외는 500을 반환한다",async () => {
+    const createGenerationMock = fn(async () => {
       throw new Error("db unavailable");
     });
     const app = createTestApp({
@@ -151,7 +151,7 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     await expectErrorCode(response, "INTERNAL_ERROR");
   });
 
-  it("상세 조회에서 UUID 파라미터가 유효하지 않으면 400을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("상세 조회에서 UUID 파라미터가 유효하지 않으면 400을 반환한다",async () => {
     const app = createTestApp({ actor: createActor("regular_member") });
 
     const response = await app.request("/api/generations/not-a-uuid");
@@ -159,8 +159,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("존재하지 않는 generation 상세 조회는 404를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const getGenerationById = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => null);
+  it("존재하지 않는 generation 상세 조회는 404를 반환한다",async () => {
+    const getGenerationById = fn(async () => null);
     const app = createTestApp({
       actor: createActor("regular_member"),
       dataService: createDataServiceMock({ getGenerationById }),
@@ -172,8 +172,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     expect(getGenerationById).toHaveBeenCalledWith(IDs.generationAlt);
   });
 
-  it("generation 상세 조회는 성공 시 200과 데이터를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const getGenerationById = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createGeneration({ id: IDs.generationAlt }));
+  it("generation 상세 조회는 성공 시 200과 데이터를 반환한다",async () => {
+    const getGenerationById = fn(async () => createGeneration({ id: IDs.generationAlt }));
     const app = createTestApp({
       actor: createActor("regular_member"),
       dataService: createDataServiceMock({ getGenerationById }),
@@ -185,8 +185,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     expect(body.data.id).toBe(IDs.generationAlt);
   });
 
-  it("manager는 generation 수정 권한이 없어 403을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const updateGeneration = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createGeneration());
+  it("manager는 generation 수정 권한이 없어 403을 반환한다",async () => {
+    const updateGeneration = fn(async () => createGeneration());
     const app = createTestApp({
       actor: createActor("manager", IDs.manager),
       dataService: createDataServiceMock({ updateGeneration }),
@@ -203,7 +203,7 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     expect(updateGeneration).not.toHaveBeenCalled();
   });
 
-  it("generation 수정 본문이 비어 있으면 400을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("generation 수정 본문이 비어 있으면 400을 반환한다",async () => {
     const app = createTestApp({ actor: createActor("vice_president", IDs.vicePresident) });
 
     const response = await app.request(`/api/generations/${IDs.generation}`, {
@@ -216,7 +216,7 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("generation 수정 파라미터가 유효하지 않으면 400을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("generation 수정 파라미터가 유효하지 않으면 400을 반환한다",async () => {
     const app = createTestApp({ actor: createActor("vice_president", IDs.vicePresident) });
 
     const response = await app.request("/api/generations/not-a-uuid", {
@@ -229,8 +229,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("generation 수정 시 UNIQUE 충돌은 409를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const updateGeneration = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("generation 수정 시 UNIQUE 충돌은 409를 반환한다",async () => {
+    const updateGeneration = fn(async () => {
       throw new Error("unique index violated");
     });
     const app = createTestApp({
@@ -248,8 +248,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     await expectErrorCode(response, "CONFLICT");
   });
 
-  it("generation 수정 시 알 수 없는 오류는 500을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const updateGeneration = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("generation 수정 시 알 수 없는 오류는 500을 반환한다",async () => {
+    const updateGeneration = fn(async () => {
       throw new Error("unexpected");
     });
     const app = createTestApp({
@@ -267,8 +267,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     await expectErrorCode(response, "INTERNAL_ERROR");
   });
 
-  it("존재하지 않는 generation 수정은 404를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const updateGeneration = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => null);
+  it("존재하지 않는 generation 수정은 404를 반환한다",async () => {
+    const updateGeneration = fn(async () => null);
     const app = createTestApp({
       actor: createActor("vice_president", IDs.vicePresident),
       dataService: createDataServiceMock({ updateGeneration }),
@@ -284,8 +284,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     await expectErrorCode(response, "NOT_FOUND");
   });
 
-  it("generation 수정 성공 시 200을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const updateGeneration = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => createGeneration({ name: "updated" }));
+  it("generation 수정 성공 시 200을 반환한다",async () => {
+    const updateGeneration = fn(async () => createGeneration({ name: "updated" }));
     const app = createTestApp({
       actor: createActor("vice_president", IDs.vicePresident),
       dataService: createDataServiceMock({ updateGeneration }),
@@ -302,8 +302,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     expect(body.data.name).toBe("updated");
   });
 
-  it("vice_president는 generation 삭제 권한이 없어 403을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const deleteGeneration = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => true);
+  it("vice_president는 generation 삭제 권한이 없어 403을 반환한다",async () => {
+    const deleteGeneration = fn(async () => true);
     const app = createTestApp({
       actor: createActor("vice_president", IDs.vicePresident),
       dataService: createDataServiceMock({ deleteGeneration }),
@@ -318,7 +318,7 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     expect(deleteGeneration).not.toHaveBeenCalled();
   });
 
-  it("generation 삭제 파라미터가 유효하지 않으면 400을 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
+  it("generation 삭제 파라미터가 유효하지 않으면 400을 반환한다",async () => {
     const app = createTestApp({ actor: createActor("president", IDs.president) });
 
     const response = await app.request("/api/generations/not-a-uuid", {
@@ -329,8 +329,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     await expectErrorCode(response, "BAD_REQUEST");
   });
 
-  it("존재하지 않는 generation 삭제는 404를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const deleteGeneration = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => false);
+  it("존재하지 않는 generation 삭제는 404를 반환한다",async () => {
+    const deleteGeneration = fn(async () => false);
     const app = createTestApp({
       actor: createActor("president", IDs.president),
       dataService: createDataServiceMock({ deleteGeneration }),
@@ -344,8 +344,8 @@ describe("generation routes", /** describe 실행 과정에서 필요한 연산�
     await expectErrorCode(response, "NOT_FOUND");
   });
 
-  it("generation 삭제 성공 시 204를 반환한다", /** it 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => {
-    const deleteGeneration = fn(/** fn 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async () => true);
+  it("generation 삭제 성공 시 204를 반환한다",async () => {
+    const deleteGeneration = fn(async () => true);
     const app = createTestApp({
       actor: createActor("president", IDs.president),
       dataService: createDataServiceMock({ deleteGeneration }),

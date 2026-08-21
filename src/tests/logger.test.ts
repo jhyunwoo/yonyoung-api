@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loggerMiddleware, logError } from "../middlewares/logger";
+import { loggerMiddleware, logError } from "../app/middleware/logger";
 import type HonoAppType from "../types/honoAppType";
 import type { Context } from "hono";
 

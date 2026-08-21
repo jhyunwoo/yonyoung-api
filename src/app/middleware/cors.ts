@@ -1,5 +1,5 @@
 import { cors } from "hono/cors";
-import { getAuthCorsOrigins } from "../lib/auth";
+import { getAuthCorsOrigins } from "../../lib/auth";
 
 export const apiCorsMiddleware = cors({
   origin: (origin, c) => {

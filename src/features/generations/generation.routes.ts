@@ -1,36 +1,32 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import HonoAppType from "../types/honoAppType";
+import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import type HonoAppType from "../../types/honoAppType";
+import { noContent, ok } from "../../lib/http/response";
+import { type AppDependencies } from "../../lib/services/dependencies";
 import {
-  badRequest,
-  conflict,
-  forbidden,
-  internalError,
-  noContent,
-  notFound,
-  ok,
-} from "../lib/http/response";
-import { parseBody, parseParams } from "../lib/validation/request";
-import { AppDependencies } from "../lib/services/dependencies";
-import { requireActor, requirePermission } from "../lib/http/authz";
+  assertPermission,
+  requireAuthenticatedActor,
+} from "../../shared/http/route-guards";
+import { readValidated } from "../../shared/http/validated-input";
 import {
   recordAuditLog,
   readChangedFields,
   withUpdatedByActor,
-} from "../lib/audit";
+} from "../../lib/audit";
 import {
   createdResponse,
   dataResponse,
   errorResponses,
   jsonBody,
   noContentResponse,
-} from "../lib/openapi/responses";
+} from "../../lib/openapi/responses";
 import {
   ApiCreateGenerationSchema,
-  ApiGenerationMemberSummarySchema,
   ApiGenerationSchema,
-  ApiIdParamSchema,
   ApiUpdateGenerationSchema,
-} from "../lib/openapi/schemas";
+} from "./generation.contract";
+import { ApiGenerationMemberSummarySchema } from "../users/user.contract";
+import { ApiIdParamSchema } from "../../shared/openapi/common.contract";
+import { AppError, isAppError } from "../../shared/errors/AppError";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -144,12 +140,6 @@ const deleteGenerationRoute = createRoute({
   },
 });
 
-/**
- * isUniqueError 조건을 평가해 사용 가능 여부를 판별합니다.
- * @param error 에러 상황을 나타내는 객체입니다.
- * @returns 조건 판별 결과(boolean)를 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 const isUniqueError = (error: unknown): boolean => {
   return (
     error instanceof Error &&
@@ -208,128 +198,94 @@ const readMemberSortName = (member: {
   return member.name.trim();
 };
 
-/**
- * registerGenerationRoutes 생성/등록 절차를 수행해 시스템 상태를 갱신합니다.
- * @param app 함수 로직에서 사용하는 입력값입니다.
- * @param dependencies 함수 로직에서 사용하는 입력값입니다.
- * @returns 처리 결과 값을 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 export const registerGenerationRoutes = (
   app: App,
   dependencies: AppDependencies,
 ) => {
-  app.openapi(listGenerationsRoute, /** app.openapi 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param c 요청/실행 컨텍스트 객체입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(listGenerationsRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    const denied = requirePermission(c, actorResult.actor, "generation", "read");
-    if (denied) {
-      return denied;
-    }
+    assertPermission(actor, "generation", "read");
 
     const data = await dependencies.getDataService(c).listGenerations();
     return ok(c, data);
   });
 
-  app.openapi(createGenerationRoute, /** app.openapi 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param c 요청/실행 컨텍스트 객체입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(createGenerationRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    const denied = requirePermission(c, actorResult.actor, "generation", "create");
-    if (denied) {
-      return denied;
-    }
+    assertPermission(actor, "generation", "create");
 
-    const body = await parseBody(c, ApiCreateGenerationSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
+    const body = readValidated(c, "json", ApiCreateGenerationSchema);
 
     try {
       const dataService = dependencies.getDataService(c);
-      const data = await dataService.createGeneration(body.data);
+      const data = await dataService.createGeneration(body);
       await recordAuditLog({
         dataService,
-        actor: actorResult.actor,
+        actor: actor,
         resourceType: "generation",
         resourceId: data.id,
         action: "create",
-        changedFields: readChangedFields(body.data, [
+        changedFields: readChangedFields(body, [
           "name",
           "sortOrder",
           "startDate",
           "endDate",
         ]),
       });
-      return ok(c, withUpdatedByActor(data, actorResult.actor), 201);
+      return ok(c, withUpdatedByActor(data, actor), 201);
     } catch (error) {
-      if (isUniqueError(error)) {
-        return conflict(c, readUniqueConflictMessage(error));
+      // 핸들러가 의도적으로 던진 도메인 에러(404 등)를 500으로 덮지 않는다.
+      if (isAppError(error)) {
+        throw error;
       }
-      return internalError(c);
+      if (isUniqueError(error)) {
+        throw AppError.conflict(readUniqueConflictMessage(error));
+      }
+      throw AppError.internal(undefined, undefined, error);
     }
   });
 
-  app.openapi(getGenerationByIdRoute, /** app.openapi 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param c 요청/실행 컨텍스트 객체입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(getGenerationByIdRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    const denied = requirePermission(c, actorResult.actor, "generation", "read");
-    if (denied) {
-      return denied;
-    }
+    assertPermission(actor, "generation", "read");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const params = readValidated(c, "param", ApiIdParamSchema);
 
     const data = await dependencies
       .getDataService(c)
-      .getGenerationById(params.data.id);
+      .getGenerationById(params.id);
     if (!data) {
-      return notFound(c);
+      throw AppError.notFound();
     }
     return ok(c, data);
   });
 
-  app.openapi(listGenerationMembersRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(listGenerationMembersRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    const denied = requirePermission(c, actorResult.actor, "generation", "read");
-    if (denied) {
-      return denied;
-    }
+    assertPermission(actor, "generation", "read");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const params = readValidated(c, "param", ApiIdParamSchema);
 
     const dataService = dependencies.getDataService(c);
-    const generation = await dataService.getGenerationById(params.data.id);
+    const generation = await dataService.getGenerationById(params.id);
     if (!generation) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
-    if (!isGlobalGenerationMemberReader(actorResult.actor.role)) {
-      const actorGenerationIdSet = readGenerationIdSet(actorResult.actor);
+    if (!isGlobalGenerationMemberReader(actor.role)) {
+      const actorGenerationIdSet = readGenerationIdSet(actor);
       if (!actorGenerationIdSet.has(generation.id)) {
-        return forbidden(c);
+        throw AppError.forbidden();
       }
     }
 
-    const members = (await dataService.listUsersByGenerationIds([generation.id]))
+    const members = (
+      await dataService.listUsersByGenerationIds([generation.id])
+    )
       .map((candidate) => ({
         id: candidate.id,
         generationId: generation.id,
@@ -349,80 +305,63 @@ export const registerGenerationRoutes = (
     return ok(c, members);
   });
 
-  app.openapi(updateGenerationRoute, /** app.openapi 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param c 요청/실행 컨텍스트 객체입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(updateGenerationRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    const denied = requirePermission(c, actorResult.actor, "generation", "update");
-    if (denied) {
-      return denied;
-    }
+    assertPermission(actor, "generation", "update");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const params = readValidated(c, "param", ApiIdParamSchema);
 
-    const body = await parseBody(c, ApiUpdateGenerationSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
+    const body = readValidated(c, "json", ApiUpdateGenerationSchema);
 
-    if (Object.keys(body.data).length === 0) {
-      return badRequest(c, "수정할 필드를 하나 이상 전달해야 합니다.");
+    if (Object.keys(body).length === 0) {
+      throw AppError.badRequest("수정할 필드를 하나 이상 전달해야 합니다.");
     }
 
     try {
       const dataService = dependencies.getDataService(c);
-      const data = await dataService.updateGeneration(params.data.id, body.data);
+      const data = await dataService.updateGeneration(params.id, body);
       if (!data) {
-        return notFound(c);
+        throw AppError.notFound();
       }
       await recordAuditLog({
         dataService,
-        actor: actorResult.actor,
+        actor: actor,
         resourceType: "generation",
         resourceId: data.id,
         action: "update",
-        changedFields: readChangedFields(body.data, ["updatedAt"]),
+        changedFields: readChangedFields(body, ["updatedAt"]),
       });
-      return ok(c, withUpdatedByActor(data, actorResult.actor));
+      return ok(c, withUpdatedByActor(data, actor));
     } catch (error) {
-      if (isUniqueError(error)) {
-        return conflict(c, readUniqueConflictMessage(error));
+      // 핸들러가 의도적으로 던진 도메인 에러(404 등)를 500으로 덮지 않는다.
+      if (isAppError(error)) {
+        throw error;
       }
-      return internalError(c);
+      if (isUniqueError(error)) {
+        throw AppError.conflict(readUniqueConflictMessage(error));
+      }
+      throw AppError.internal(undefined, undefined, error);
     }
   });
 
-  app.openapi(deleteGenerationRoute, /** app.openapi 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param c 요청/실행 컨텍스트 객체입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(deleteGenerationRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    const denied = requirePermission(c, actorResult.actor, "generation", "delete");
-    if (denied) {
-      return denied;
-    }
+    assertPermission(actor, "generation", "delete");
 
-    const params = parseParams(c, ApiIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const params = readValidated(c, "param", ApiIdParamSchema);
 
     const dataService = dependencies.getDataService(c);
-    const deleted = await dataService.deleteGeneration(params.data.id);
+    const deleted = await dataService.deleteGeneration(params.id);
     if (!deleted) {
-      return notFound(c);
+      throw AppError.notFound();
     }
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "generation",
-      resourceId: params.data.id,
+      resourceId: params.id,
       action: "delete",
       changedFields: ["deletedAt"],
     });

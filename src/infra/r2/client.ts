@@ -17,7 +17,11 @@ export type R2Client = {
 };
 
 const R2_NOT_FOUND_PATTERNS = ["NoSuchKey", "specified key does not exist"];
-const R2_TOO_LARGE_PATTERNS = ["EntityTooLarge", "MetadataTooLarge", "too large"];
+const R2_TOO_LARGE_PATTERNS = [
+  "EntityTooLarge",
+  "MetadataTooLarge",
+  "too large",
+];
 
 const mapR2Error = (error: unknown): AppError => {
   if (error instanceof AppError) {
@@ -34,7 +38,11 @@ const mapR2Error = (error: unknown): AppError => {
     return AppError.payloadTooLarge("스토리지 요청 크기 제한을 초과했습니다.");
   }
 
-  return AppError.internal("스토리지 처리 중 오류가 발생했습니다.", undefined, error);
+  return AppError.internal(
+    "스토리지 처리 중 오류가 발생했습니다.",
+    undefined,
+    error,
+  );
 };
 
 export const resolveR2Bucket = (env: Pick<Bindings, "R2" | "r2">): R2Bucket => {
@@ -45,7 +53,10 @@ export const resolveR2Bucket = (env: Pick<Bindings, "R2" | "r2">): R2Bucket => {
   return bucket;
 };
 
-const ensureSizeLimit = (sizeBytes: number | undefined, maxBytes: number | undefined) => {
+const ensureSizeLimit = (
+  sizeBytes: number | undefined,
+  maxBytes: number | undefined,
+) => {
   if (!maxBytes || maxBytes <= 0 || sizeBytes === undefined) {
     return;
   }

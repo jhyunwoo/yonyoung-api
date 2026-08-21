@@ -1,0 +1,18 @@
+# Generated and third-party artifacts
+coverage/
+node_modules/
+.wrangler/
+worker-configuration.d.ts
+public/
+pnpm-lock.yaml
+drizzle/
+migrations/
+
+# 리팩터링 작업 지시서(수기 문서)
+PLAN.md
+
+# src/lib과 테스트는 feature 이관이 끝나는 대로 포맷 범위에 넣는다.
+# 지금 한꺼번에 포맷하면 리팩터링과 무관한 전 저장소 diff가 생긴다.
+src/lib/
+src/tests/
+tests/integration/

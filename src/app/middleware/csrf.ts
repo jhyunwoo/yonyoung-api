@@ -35,11 +35,13 @@ const readRequestOrigin = (request: Request): string | null => {
   }
 };
 
-export const apiCsrfProtectionMiddleware: MiddlewareHandler<HonoAppType> = async (
-  c,
-  next,
-) => {
-  if (SAFE_METHODS.has(c.req.method.toUpperCase()) || isCsrfExemptPath(c.req.path)) {
+export const apiCsrfProtectionMiddleware: MiddlewareHandler<
+  HonoAppType
+> = async (c, next) => {
+  if (
+    SAFE_METHODS.has(c.req.method.toUpperCase()) ||
+    isCsrfExemptPath(c.req.path)
+  ) {
     await next();
     return;
   }

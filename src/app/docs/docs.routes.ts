@@ -1,15 +1,23 @@
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { z } from "../../shared/openapi/zod";
 import { Scalar } from "@scalar/hono-api-reference";
 import type { Context } from "hono";
-import { OPENAPI_BASE_DOCUMENT, OPENAPI_JSON_PATHS, OPENAPI_UI_PATHS } from "../app/openapi";
-import { runInBackground } from "../lib/http/background-task";
-import { internalError, notFound } from "../lib/http/response";
-import { enrichOpenApiDocument } from "../lib/openapi/enrich";
-import { mergeOpenApiDocuments, type OpenAPIDocument } from "../lib/openapi/merge";
-import { errorResponses } from "../lib/openapi/responses";
-import { ApiOpenApiDocumentSchema } from "../lib/openapi/schemas";
-import type { AppDependencies } from "../lib/services/dependencies";
-import HonoAppType from "../types/honoAppType";
+import {
+  OPENAPI_BASE_DOCUMENT,
+  OPENAPI_JSON_PATHS,
+  OPENAPI_UI_PATHS,
+} from "../openapi";
+import { runInBackground } from "../../lib/http/background-task";
+import { AppError } from "../../shared/errors/AppError";
+import { enrichOpenApiDocument } from "../../lib/openapi/enrich";
+import {
+  mergeOpenApiDocuments,
+  type OpenAPIDocument,
+} from "../../lib/openapi/merge";
+import { errorResponses } from "../../lib/openapi/responses";
+import { ApiOpenApiDocumentSchema } from "../../shared/openapi/openapi-document.contract";
+import type { AppDependencies } from "../../lib/services/dependencies";
+import type HonoAppType from "../../types/honoAppType";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -96,7 +104,10 @@ const readOpenApiDocumentCacheKey = (c: Context<HonoAppType>): string => {
   return `${new URL(c.req.url).origin}|${readAuthSchemaCacheSignature(c)}`;
 };
 
-const cacheOpenApiDocument = (cacheKey: string, document: OpenAPIDocument): void => {
+const cacheOpenApiDocument = (
+  cacheKey: string,
+  document: OpenAPIDocument,
+): void => {
   const now = Date.now();
   openApiDocumentCache.set(cacheKey, {
     document,
@@ -109,38 +120,27 @@ const setDocsCacheHeaders = (c: Context<HonoAppType>): void => {
   c.header("Cache-Control", DOCS_CACHE_CONTROL);
 };
 
-const ensureDocsEnabled = (
+const assertDocsEnabled = (
   c: Context<HonoAppType>,
   dependencies: AppDependencies,
-): Response | null => {
-  if (dependencies.isDocsEnabled(c)) {
-    return null;
+): void => {
+  if (!dependencies.isDocsEnabled(c)) {
+    throw AppError.notFound("개발 환경에서만 OpenAPI 문서를 제공합니다.");
   }
-
-  return notFound(c, "개발 환경에서만 OpenAPI 문서를 제공합니다.");
 };
 
-/**
- * registerDocsRoutes 생성/등록 절차를 수행해 시스템 상태를 갱신합니다.
- * @param app 함수 로직에서 사용하는 입력값입니다.
- * @param dependencies 함수 로직에서 사용하는 입력값입니다.
- * @returns 처리 결과 값을 반환합니다.
- * @remarks 네트워크 실패/타임아웃 상황을 고려해 예외 처리와 기본값 규약을 유지해야 합니다.
- */
-export const registerDocsRoutes = (
-  app: App,
-  dependencies: AppDependencies,
-) => {
+// 문서 생성은 Better Auth 스키마 fetch를 포함하므로 실패/타임아웃을 전제로 캐시와 폴백을 둔다.
+export const registerDocsRoutes = (app: App, dependencies: AppDependencies) => {
   const openApiJsonRoutes = OPENAPI_JSON_PATHS.map((path, index) =>
-    createOpenApiJsonRoute(path, index === 0 ? "getOpenApiDocument" : "getOpenApiDocumentAlias"),
+    createOpenApiJsonRoute(
+      path,
+      index === 0 ? "getOpenApiDocument" : "getOpenApiDocumentAlias",
+    ),
   );
 
   for (const route of openApiJsonRoutes) {
-    app.openapi(route, async (c): Promise<any> => {
-      const denied = ensureDocsEnabled(c, dependencies);
-      if (denied) {
-        return denied;
-      }
+    app.openapi(route, async (c) => {
+      assertDocsEnabled(c, dependencies);
 
       const cacheKey = readOpenApiDocumentCacheKey(c);
       const now = Date.now();
@@ -181,7 +181,9 @@ export const registerDocsRoutes = (
         setDocsCacheHeaders(c);
         return c.json(document, 200);
       } catch {
-        return internalError(c, "OpenAPI 문서를 생성하지 못했습니다.");
+        throw AppError.internalWithReason(
+          "OpenAPI 문서를 생성하지 못했습니다.",
+        );
       }
     });
   }
@@ -193,21 +195,26 @@ export const registerDocsRoutes = (
   });
 
   const docsUiRoutes = OPENAPI_UI_PATHS.map((path, index) =>
-    createDocsUiRoute(path, index === 0 ? "getScalarApiReference" : "getScalarApiReferenceAlias"),
+    createDocsUiRoute(
+      path,
+      index === 0 ? "getScalarApiReference" : "getScalarApiReferenceAlias",
+    ),
   );
 
   for (const route of docsUiRoutes) {
-    app.openapi(route, async (c): Promise<any> => {
-      const denied = ensureDocsEnabled(c, dependencies);
-      if (denied) {
-        return denied;
-      }
+    app.openapi(route, async (c) => {
+      assertDocsEnabled(c, dependencies);
 
       try {
         setDocsCacheHeaders(c);
-        return scalarReference(c, async () => {});
+        // Scalar 미들웨어가 완성된 HTML Response를 만들어 준다. 라우트 계약은
+        // text/html 문자열이므로 여기서만 그 사실을 타입으로 이어 준다.
+        const rendered = await scalarReference(c, async () => undefined);
+        return (rendered ?? c.res) as ReturnType<typeof c.html>;
       } catch {
-        return internalError(c, "OpenAPI 문서 UI를 렌더링하지 못했습니다.");
+        throw AppError.internalWithReason(
+          "OpenAPI 문서 UI를 렌더링하지 못했습니다.",
+        );
       }
     });
   }

@@ -45,6 +45,7 @@ export const resolveApiErrorCode = (
         return "NOT_FOUND";
       }
       return "INTERNAL_ERROR";
+    case ERROR_CODES.INTERNAL_ERROR:
     default:
       return "INTERNAL_ERROR";
   }

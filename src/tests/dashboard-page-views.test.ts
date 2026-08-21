@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { DashboardPageViewStatsEntity } from "../lib/services/types";
+import { type DashboardPageViewStatsEntity } from "../lib/services/types";
 import {
   IDs,
   createActor,

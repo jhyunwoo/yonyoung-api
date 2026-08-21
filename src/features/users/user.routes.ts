@@ -1,43 +1,40 @@
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import HonoAppType from "../types/honoAppType";
-import {
-  badRequest,
-  forbidden,
-  noContent,
-  notFound,
-  ok,
-} from "../lib/http/response";
-import { parseBody, parseParams } from "../lib/validation/request";
-import { AppDependencies } from "../lib/services/dependencies";
-import { requireActor } from "../lib/http/authz";
+import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { z } from "../../shared/openapi/zod";
+import type HonoAppType from "../../types/honoAppType";
+import { noContent, ok } from "../../lib/http/response";
+import { type AppDependencies } from "../../lib/services/dependencies";
+import { requireAuthenticatedActor } from "../../shared/http/route-guards";
+import { readValidated } from "../../shared/http/validated-input";
+import { parseBody } from "../../lib/validation/request";
 import {
   recordAuditLog,
   readChangedFields,
   withUpdatedByActor,
-} from "../lib/audit";
+} from "../../lib/audit";
 import {
   can,
   canAssignRole,
   isMemberLikeRole,
   normalizeRole,
-} from "../lib/authorization/policy";
+} from "../../lib/authorization/policy";
 import {
   dataResponse,
   errorResponses,
   jsonBody,
   noContentResponse,
-} from "../lib/openapi/responses";
+} from "../../lib/openapi/responses";
 import {
   ApiAdminUpdateUserSchema,
   ApiBulkUpdateUserRoleSchema,
+  ApiMemberProfileUpdateSchema,
   ApiUserResourceHistoryQuerySchema,
   ApiUserResourceHistorySchema,
-  ApiUserIdParamSchema,
   ApiUserSchema,
-  ApiMemberProfileUpdateSchema,
-} from "../lib/openapi/schemas";
-import type { Role } from "../lib/authorization/types";
-import { isHttpUrl } from "../lib/validation/url";
+} from "./user.contract";
+import { ApiUserIdParamSchema } from "../../shared/openapi/common.contract";
+import type { Role } from "../../lib/authorization/types";
+import { isHttpUrl } from "../../lib/validation/url";
+import { AppError } from "../../shared/errors/AppError";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -63,8 +60,7 @@ const sanitizeUserUrlFields = <T extends UserUrlFields>(user: T): T => {
     showcaseImageUrls: user.showcaseImageUrls
       .map((url) => url.trim())
       .filter(isHttpUrl),
-    personalLink:
-      personalLink && isHttpUrl(personalLink) ? personalLink : null,
+    personalLink: personalLink && isHttpUrl(personalLink) ? personalLink : null,
   };
 };
 
@@ -144,7 +140,10 @@ const getUserResourceHistoryRoute = createRoute({
     query: ApiUserResourceHistoryQuerySchema,
   },
   responses: {
-    200: dataResponse(ApiUserResourceHistorySchema, "사용자 리소스 이력 조회 성공"),
+    200: dataResponse(
+      ApiUserResourceHistorySchema,
+      "사용자 리소스 이력 조회 성공",
+    ),
     400: errorResponses[400],
     401: errorResponses[401],
     403: errorResponses[403],
@@ -207,29 +206,19 @@ const bulkUpdateUserRoleRoute = createRoute({
   },
 });
 
-/**
- * registerUserRoutes 생성/등록 절차를 수행해 시스템 상태를 갱신합니다.
- * @param app 함수 로직에서 사용하는 입력값입니다.
- * @param dependencies 함수 로직에서 사용하는 입력값입니다.
- * @returns 처리 결과 값을 반환합니다.
- * @remarks 권한/인증 분기에서 잘못된 흐름이 발생하지 않도록 호출 순서를 유지해야 합니다.
- */
 export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
-  app.openapi(listUsersRoute, /** app.openapi 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param c 요청/실행 컨텍스트 객체입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 권한/인증 분기에서 잘못된 흐름이 발생하지 않도록 호출 순서를 유지해야 합니다. */ async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(listUsersRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    if (canReadAllUsers(actorResult.actor.role)) {
+    if (canReadAllUsers(actor.role)) {
       const data = await dependencies.getDataService(c).listUsers();
       return ok(c, data.map(sanitizeUserUrlFields));
     }
 
-    if (actorResult.actor.role === "manager") {
-      const actorGenerationIdSet = new Set(actorResult.actor.generationIds ?? []);
-      if (actorResult.actor.generationId) {
-        actorGenerationIdSet.add(actorResult.actor.generationId);
+    if (actor.role === "manager") {
+      const actorGenerationIdSet = new Set(actor.generationIds ?? []);
+      if (actor.generationId) {
+        actorGenerationIdSet.add(actor.generationId);
       }
 
       if (actorGenerationIdSet.size === 0) {
@@ -242,160 +231,138 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
       return ok(c, data.map(sanitizeUserUrlFields));
     }
 
-    if (isMemberLikeRole(actorResult.actor.role)) {
-      const me = await dependencies.getDataService(c).getUserById(actorResult.actor.id);
+    if (isMemberLikeRole(actor.role)) {
+      const me = await dependencies.getDataService(c).getUserById(actor.id);
       if (!me) {
-        return notFound(c);
+        throw AppError.notFound();
       }
       return ok(c, [sanitizeUserUrlFields(me)]);
     }
 
-    return forbidden(c);
+    throw AppError.forbidden();
   });
 
-  app.openapi(getCurrentUserRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(getCurrentUserRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    const data = await dependencies
-      .getDataService(c)
-      .getUserById(actorResult.actor.id);
+    const data = await dependencies.getDataService(c).getUserById(actor.id);
     if (!data) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     return ok(c, sanitizeUserUrlFields(data));
   });
 
-  app.openapi(getUserByIdRoute, /** app.openapi 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param c 요청/실행 컨텍스트 객체입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 권한/인증 분기에서 잘못된 흐름이 발생하지 않도록 호출 순서를 유지해야 합니다. */ async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
+  app.openapi(getUserByIdRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+
+    const params = readValidated(c, "param", ApiUserIdParamSchema);
+
+    const isSelf = actor.id === params.id;
+    if (!canReadAllUsers(actor.role) && actor.role !== "manager" && !isSelf) {
+      throw AppError.forbidden();
     }
 
-    const params = parseParams(c, ApiUserIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
-
-    const isSelf = actorResult.actor.id === params.data.id;
-    if (
-      !canReadAllUsers(actorResult.actor.role) &&
-      actorResult.actor.role !== "manager" &&
-      !isSelf
-    ) {
-      return forbidden(c);
-    }
-
-    const data = await dependencies.getDataService(c).getUserById(params.data.id);
+    const data = await dependencies.getDataService(c).getUserById(params.id);
     if (!data) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     if (
-      actorResult.actor.role === "manager" &&
+      actor.role === "manager" &&
       !isSelf &&
       (() => {
-        const actorGenerationIdSet = new Set(actorResult.actor.generationIds ?? []);
-        if (actorResult.actor.generationId) {
-          actorGenerationIdSet.add(actorResult.actor.generationId);
+        const actorGenerationIdSet = new Set(actor.generationIds ?? []);
+        if (actor.generationId) {
+          actorGenerationIdSet.add(actor.generationId);
         }
         if (actorGenerationIdSet.size === 0) {
           return true;
         }
         const targetGenerationIds =
           (data.generationIds?.length ?? 0) > 0
-            ? data.generationIds ?? []
+            ? (data.generationIds ?? [])
             : data.generationId
               ? [data.generationId]
               : [];
         return !targetGenerationIds.some((id) => actorGenerationIdSet.has(id));
       })()
     ) {
-      return forbidden(c);
+      throw AppError.forbidden();
     }
 
     return ok(c, sanitizeUserUrlFields(data));
   });
 
-  app.openapi(getUserResourceHistoryRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
+  app.openapi(getUserResourceHistoryRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+
+    if (!canReadAllUsers(actor.role)) {
+      throw AppError.forbidden();
     }
 
-    if (!canReadAllUsers(actorResult.actor.role)) {
-      return forbidden(c);
-    }
+    const params = readValidated(c, "param", ApiUserIdParamSchema);
 
-    const params = parseParams(c, ApiUserIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
-
-    const query = ApiUserResourceHistoryQuerySchema.safeParse(c.req.query());
-    if (!query.success) {
-      return badRequest(c, query.error.issues[0]?.message ?? "잘못된 요청입니다.");
-    }
+    const query = readValidated(c, "query", ApiUserResourceHistoryQuerySchema);
 
     const dataService = dependencies.getDataService(c);
-    const targetUser = await dataService.getUserById(params.data.id);
+    const targetUser = await dataService.getUserById(params.id);
     if (!targetUser) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     const history = await dataService.listUserResourceHistory({
-      userId: params.data.id,
-      page: query.data.page,
-      pageSize: query.data.pageSize,
-      action: query.data.action,
+      userId: params.id,
+      page: query.page,
+      pageSize: query.pageSize,
+      action: query.action,
     });
     return ok(c, history);
   });
 
-  app.openapi(bulkUpdateUserRoleRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
+  app.openapi(bulkUpdateUserRoleRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+
+    if (!can(actor.role, "user", "update")) {
+      throw AppError.forbidden();
     }
 
-    if (!can(actorResult.actor.role, "user", "update")) {
-      return forbidden(c);
-    }
+    const body = readValidated(c, "json", ApiBulkUpdateUserRoleSchema);
 
-    const body = await parseBody(c, ApiBulkUpdateUserRoleSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
-
-    if (!canAssignRole(actorResult.actor.role, body.data.role)) {
-      return forbidden(c, "본인보다 높은 등급으로 권한을 변경할 수 없습니다.");
+    if (!canAssignRole(actor.role, body.role)) {
+      throw AppError.forbidden(
+        "본인보다 높은 등급으로 권한을 변경할 수 없습니다.",
+      );
     }
 
     const dataService = dependencies.getDataService(c);
-    const targetUserIds = Array.from(new Set(body.data.userIds));
+    const targetUserIds = Array.from(new Set(body.userIds));
     const users = await dataService.listUsersByIds(targetUserIds);
-    const userById = new Map(users.map((candidate) => [candidate.id, candidate]));
-    const targetUsers = body.data.userIds.map((userId) => userById.get(userId) ?? null);
+    const userById = new Map(
+      users.map((candidate) => [candidate.id, candidate]),
+    );
+    const targetUsers = body.userIds.map(
+      (userId) => userById.get(userId) ?? null,
+    );
     if (targetUsers.some((user) => user === null)) {
-      return badRequest(c, "일부 대상 사용자를 찾을 수 없습니다.");
+      throw AppError.badRequest("일부 대상 사용자를 찾을 수 없습니다.");
     }
 
     const unauthorizedTargetExists = targetUsers.some(
       (candidate) =>
         candidate !== null &&
-        !canManageTargetUser(actorResult.actor, {
+        !canManageTargetUser(actor, {
           id: candidate.id,
           role: candidate.role,
         }),
     );
     if (unauthorizedTargetExists) {
-      return forbidden(c, "본인보다 높거나 같은 등급의 사용자는 변경할 수 없습니다.");
+      throw AppError.forbidden(
+        "본인보다 높거나 같은 등급의 사용자는 변경할 수 없습니다.",
+      );
     }
 
-    const normalizedNextRole = normalizeRole(body.data.role);
+    const normalizedNextRole = normalizeRole(body.role);
     const presidentCount = await dataService.countUsersByRole("president");
     const demotedPresidentCount = targetUsers.filter(
       (candidate) =>
@@ -404,18 +371,18 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
         normalizedNextRole !== "president",
     ).length;
     if (presidentCount - demotedPresidentCount <= 0) {
-      return badRequest(c, "회장 권한은 최소 1명 이상 유지되어야 합니다.");
+      throw AppError.badRequest("회장 권한은 최소 1명 이상 유지되어야 합니다.");
     }
 
     const updatedUsers = await dataService.bulkUpdateUsersRole({
-      userIds: body.data.userIds,
+      userIds: body.userIds,
       role: normalizedNextRole,
     });
     await Promise.all(
       updatedUsers.map((updatedUser) =>
         recordAuditLog({
           dataService,
-          actor: actorResult.actor,
+          actor: actor,
           resourceType: "user",
           resourceId: updatedUser.id,
           action: "update",
@@ -426,55 +393,52 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
     return ok(
       c,
       updatedUsers.map((updatedUser) =>
-        sanitizeUserUrlFields(
-          withUpdatedByActor(updatedUser, actorResult.actor),
-        ),
+        sanitizeUserUrlFields(withUpdatedByActor(updatedUser, actor)),
       ),
     );
   });
 
-  app.openapi(updateUserRoute, /** app.openapi 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param c 요청/실행 컨텍스트 객체입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 권한/인증 분기에서 잘못된 흐름이 발생하지 않도록 호출 순서를 유지해야 합니다. */ async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(updateUserRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    const params = parseParams(c, ApiUserIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const params = readValidated(c, "param", ApiUserIdParamSchema);
 
-    const isSelf = actorResult.actor.id === params.data.id;
-    const isAdminLike = can(actorResult.actor.role, "user", "update");
+    const isSelf = actor.id === params.id;
+    const isAdminLike = can(actor.role, "user", "update");
     const dataService = dependencies.getDataService(c);
 
     if (isAdminLike) {
+      // 라우트 계약은 admin/member 스키마의 union이라 여기서 역할에 맞는 쪽으로 한 번 더 좁힌다.
       const body = await parseBody(c, ApiAdminUpdateUserSchema);
       if (!body.success) {
-        return badRequest(c, body.message);
+        throw AppError.badRequest(body.message);
       }
       if (Object.keys(body.data).length === 0) {
-        return badRequest(c, "수정할 필드를 하나 이상 전달해야 합니다.");
+        throw AppError.badRequest("수정할 필드를 하나 이상 전달해야 합니다.");
       }
 
-      const currentUser = await dataService.getUserById(params.data.id);
+      const currentUser = await dataService.getUserById(params.id);
       if (!currentUser) {
-        return notFound(c);
+        throw AppError.notFound();
       }
 
       if (
-        !canManageTargetUser(actorResult.actor, {
+        !canManageTargetUser(actor, {
           id: currentUser.id,
           role: currentUser.role,
         })
       ) {
-        return forbidden(c, "본인보다 높거나 같은 등급의 사용자는 변경할 수 없습니다.");
+        throw AppError.forbidden(
+          "본인보다 높거나 같은 등급의 사용자는 변경할 수 없습니다.",
+        );
       }
 
       const updateInput = { ...body.data };
       if (updateInput.role !== undefined) {
-        if (!canAssignRole(actorResult.actor.role, updateInput.role)) {
-          return forbidden(c, "본인보다 높은 등급으로 권한을 변경할 수 없습니다.");
+        if (!canAssignRole(actor.role, updateInput.role)) {
+          throw AppError.forbidden(
+            "본인보다 높은 등급으로 권한을 변경할 수 없습니다.",
+          );
         }
 
         const currentNormalizedRole = normalizeRole(currentUser.role);
@@ -483,117 +447,111 @@ export const registerUserRoutes = (app: App, dependencies: AppDependencies) => {
           currentNormalizedRole === "president" &&
           nextNormalizedRole !== "president"
         ) {
-          const presidentCount = await dataService.countUsersByRole("president");
+          const presidentCount =
+            await dataService.countUsersByRole("president");
           if (presidentCount <= 1) {
-            return badRequest(c, "회장 권한은 최소 1명 이상 유지되어야 합니다.");
+            throw AppError.badRequest(
+              "회장 권한은 최소 1명 이상 유지되어야 합니다.",
+            );
           }
         }
 
         updateInput.role = nextNormalizedRole;
       }
 
-      const data = await dataService.updateUser(params.data.id, updateInput);
+      const data = await dataService.updateUser(params.id, updateInput);
       if (!data) {
-        return notFound(c);
+        throw AppError.notFound();
       }
       await recordAuditLog({
         dataService,
-        actor: actorResult.actor,
+        actor: actor,
         resourceType: "user",
         resourceId: data.id,
         action: "update",
         changedFields: readChangedFields(updateInput, ["updatedAt"]),
       });
-      return ok(
-        c,
-        sanitizeUserUrlFields(withUpdatedByActor(data, actorResult.actor)),
-      );
+      return ok(c, sanitizeUserUrlFields(withUpdatedByActor(data, actor)));
     }
 
     // member 계열 role 및 unverified는 본인 프로필 필드만 수정 가능하다.
     if (
-      (isMemberLikeRole(actorResult.actor.role) ||
-        actorResult.actor.role === "unverified") &&
+      (isMemberLikeRole(actor.role) || actor.role === "unverified") &&
       isSelf
     ) {
       const body = await parseBody(c, ApiMemberProfileUpdateSchema);
       if (!body.success) {
-        return badRequest(c, body.message);
+        throw AppError.badRequest(body.message);
       }
       if (Object.keys(body.data).length === 0) {
-        return badRequest(c, "수정할 필드를 하나 이상 전달해야 합니다.");
+        throw AppError.badRequest("수정할 필드를 하나 이상 전달해야 합니다.");
       }
-      const data = await dataService.updateUser(params.data.id, body.data);
+      const data = await dataService.updateUser(params.id, body.data);
       if (!data) {
-        return notFound(c);
+        throw AppError.notFound();
       }
       await recordAuditLog({
         dataService,
-        actor: actorResult.actor,
+        actor: actor,
         resourceType: "user",
         resourceId: data.id,
         action: "update",
         changedFields: readChangedFields(body.data, ["updatedAt"]),
       });
-      return ok(
-        c,
-        sanitizeUserUrlFields(withUpdatedByActor(data, actorResult.actor)),
-      );
+      return ok(c, sanitizeUserUrlFields(withUpdatedByActor(data, actor)));
     }
 
-    return forbidden(c);
+    throw AppError.forbidden();
   });
 
-  app.openapi(deleteUserRoute, /** app.openapi 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param c 요청/실행 컨텍스트 객체입니다. @returns 비동기 처리 결과를 Promise로 반환합니다. @remarks 권한/인증 분기에서 잘못된 흐름이 발생하지 않도록 호출 순서를 유지해야 합니다. */ async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(deleteUserRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    const params = parseParams(c, ApiUserIdParamSchema);
-    if (!params.success) {
-      return badRequest(c, params.message);
-    }
+    const params = readValidated(c, "param", ApiUserIdParamSchema);
 
-    const isSelf = actorResult.actor.id === params.data.id;
-    if (!can(actorResult.actor.role, "user", "delete")) {
-      if (!(isMemberLikeRole(actorResult.actor.role) && isSelf)) {
-        return forbidden(c);
+    const isSelf = actor.id === params.id;
+    if (!can(actor.role, "user", "delete")) {
+      if (!(isMemberLikeRole(actor.role) && isSelf)) {
+        throw AppError.forbidden();
       }
     }
 
     const dataService = dependencies.getDataService(c);
-    const targetUser = await dataService.getUserById(params.data.id);
+    const targetUser = await dataService.getUserById(params.id);
     if (!targetUser) {
-      return notFound(c);
+      throw AppError.notFound();
     }
 
     if (
-      can(actorResult.actor.role, "user", "delete") &&
-      !canManageTargetUser(actorResult.actor, {
+      can(actor.role, "user", "delete") &&
+      !canManageTargetUser(actor, {
         id: targetUser.id,
         role: targetUser.role,
       })
     ) {
-      return forbidden(c, "본인보다 높거나 같은 등급의 사용자는 삭제할 수 없습니다.");
+      throw AppError.forbidden(
+        "본인보다 높거나 같은 등급의 사용자는 삭제할 수 없습니다.",
+      );
     }
 
     if (normalizeRole(targetUser.role) === "president") {
       const presidentCount = await dataService.countUsersByRole("president");
       if (presidentCount <= 1) {
-        return badRequest(c, "회장 권한은 최소 1명 이상 유지되어야 합니다.");
+        throw AppError.badRequest(
+          "회장 권한은 최소 1명 이상 유지되어야 합니다.",
+        );
       }
     }
 
-    const deleted = await dataService.deleteUser(params.data.id);
+    const deleted = await dataService.deleteUser(params.id);
     if (!deleted) {
-      return notFound(c);
+      throw AppError.notFound();
     }
     await recordAuditLog({
       dataService,
-      actor: actorResult.actor,
+      actor: actor,
       resourceType: "user",
-      resourceId: params.data.id,
+      resourceId: params.id,
       action: "delete",
       changedFields: ["deletedAt"],
     });

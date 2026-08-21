@@ -1,16 +1,21 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import type HonoAppType from "../types/honoAppType";
-import { badRequest, forbidden, ok } from "../lib/http/response";
-import { parseBody } from "../lib/validation/request";
-import type { AppDependencies } from "../lib/services/dependencies";
-import { requireActor } from "../lib/http/authz";
-import { can } from "../lib/authorization/policy";
-import type { Role } from "../lib/authorization/types";
-import { dataResponse, errorResponses, jsonBody } from "../lib/openapi/responses";
+import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import type HonoAppType from "../../types/honoAppType";
+import { ok } from "../../lib/http/response";
+import type { AppDependencies } from "../../lib/services/dependencies";
+import { requireAuthenticatedActor } from "../../shared/http/route-guards";
+import { readValidated } from "../../shared/http/validated-input";
+import { can } from "../../lib/authorization/policy";
+import type { Role } from "../../lib/authorization/types";
+import {
+  dataResponse,
+  errorResponses,
+  jsonBody,
+} from "../../lib/openapi/responses";
 import {
   ApiSiteSettingsSchema,
   ApiUpdateSiteSettingsSchema,
-} from "../lib/openapi/schemas";
+} from "./site-settings.contract";
+import { AppError } from "../../shared/errors/AppError";
 
 type App = OpenAPIHono<HonoAppType>;
 
@@ -55,47 +60,40 @@ export const registerSiteSettingsRoutes = (
   app: App,
   dependencies: AppDependencies,
 ) => {
-  app.openapi(getSiteSettingsRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
-    }
+  app.openapi(getSiteSettingsRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
 
-    if (!isPrivilegedActor(actorResult.actor.role)) {
-      return forbidden(c);
+    if (!isPrivilegedActor(actor.role)) {
+      throw AppError.forbidden();
     }
 
     const data = await dependencies.getDataService(c).getSiteSettings();
     return ok(c, data);
   });
 
-  app.openapi(updateSiteSettingsRoute, async (c): Promise<any> => {
-    const actorResult = await requireActor(c, dependencies);
-    if ("response" in actorResult) {
-      return actorResult.response;
+  app.openapi(updateSiteSettingsRoute, async (c) => {
+    const actor = await requireAuthenticatedActor(c, dependencies);
+
+    if (!isPrivilegedActor(actor.role)) {
+      throw AppError.forbidden();
     }
 
-    if (!isPrivilegedActor(actorResult.actor.role)) {
-      return forbidden(c);
-    }
+    const body = readValidated(c, "json", ApiUpdateSiteSettingsSchema);
 
-    const body = await parseBody(c, ApiUpdateSiteSettingsSchema);
-    if (!body.success) {
-      return badRequest(c, body.message);
-    }
-
-    if (Object.keys(body.data).length === 0) {
-      return badRequest(c, "수정할 필드를 하나 이상 전달해야 합니다.");
+    if (Object.keys(body).length === 0) {
+      throw AppError.badRequest("수정할 필드를 하나 이상 전달해야 합니다.");
     }
 
     const normalized = {
-      ...body.data,
-      ...(body.data.footerInstagramId !== undefined
-        ? { footerInstagramId: normalizeInstagramId(body.data.footerInstagramId) }
+      ...body,
+      ...(body.footerInstagramId !== undefined
+        ? { footerInstagramId: normalizeInstagramId(body.footerInstagramId) }
         : {}),
     };
 
-    const data = await dependencies.getDataService(c).updateSiteSettings(normalized);
+    const data = await dependencies
+      .getDataService(c)
+      .updateSiteSettings(normalized);
     return ok(c, data);
   });
 };

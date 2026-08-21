@@ -58,10 +58,7 @@ export const createMaxBodySizeMiddleware = (
         if (receivedBytes > maxBytes) {
           // Cancel both tee branches concurrently. Waiting for only one branch
           // first can leave the tee cancellation promise unresolved.
-          await Promise.allSettled([
-            reader.cancel(),
-            request.body.cancel(),
-          ]);
+          await Promise.allSettled([reader.cancel(), request.body.cancel()]);
           throw payloadTooLargeError(maxBytes);
         }
       }

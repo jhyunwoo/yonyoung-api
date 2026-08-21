@@ -6,13 +6,13 @@
 
 ## 기본 정보
 
-| 항목 | 값 |
-|------|-----|
-| Base URL | `https://yonyoung.yonsei.ac.kr` |
-| 경로 | `/api/admin/page-views/dashboard` |
-| 메서드 | `GET` |
-| 인증 | **필요** (관리자 권한 쿠키 세션) |
-| Content-Type | `application/json` |
+| 항목         | 값                                |
+| ------------ | --------------------------------- |
+| Base URL     | `https://yonyoung.yonsei.ac.kr`   |
+| 경로         | `/api/admin/page-views/dashboard` |
+| 메서드       | `GET`                             |
+| 인증         | **필요** (관리자 권한 쿠키 세션)  |
+| Content-Type | `application/json`                |
 
 ---
 
@@ -22,17 +22,17 @@
 
 ### 데이터 구조 (`data`)
 
-| 필드명 | 타입 | 설명 |
-|--------|------|------|
-| `today` | `object` | 오늘의 방문 통계 |
-| `today.count` | `number` | 오늘 총 방문 수 (KST 기준) |
-| `today.prevCount` | `number` | 어제 총 방문 수 (KST 기준) |
-| `thisWeek` | `object` | 이번 주의 방문 통계 |
-| `thisWeek.count` | `number` | 이번 주 총 방문 수 (월요일~현재, KST 기준) |
+| 필드명               | 타입     | 설명                                                 |
+| -------------------- | -------- | ---------------------------------------------------- |
+| `today`              | `object` | 오늘의 방문 통계                                     |
+| `today.count`        | `number` | 오늘 총 방문 수 (KST 기준)                           |
+| `today.prevCount`    | `number` | 어제 총 방문 수 (KST 기준)                           |
+| `thisWeek`           | `object` | 이번 주의 방문 통계                                  |
+| `thisWeek.count`     | `number` | 이번 주 총 방문 수 (월요일~현재, KST 기준)           |
 | `thisWeek.prevCount` | `number` | 지난 주 총 방문 수 (지난 주 월요일~일요일, KST 기준) |
-| `dailyTrend` | `array` | 최근 30일간의 일별 방문 추세 |
-| `dailyTrend[].date` | `string` | 날짜 (YYYY-MM-DD, KST 기준) |
-| `dailyTrend[].count` | `number` | 해당 날짜의 방문 수 |
+| `dailyTrend`         | `array`  | 최근 30일간의 일별 방문 추세                         |
+| `dailyTrend[].date`  | `string` | 날짜 (YYYY-MM-DD, KST 기준)                          |
+| `dailyTrend[].count` | `number` | 해당 날짜의 방문 수                                  |
 
 ### 응답 예시
 
@@ -60,10 +60,10 @@
 
 ## 에러 응답
 
-| 코드 | 설명 |
-|------|------|
+| 코드               | 설명                                   |
+| ------------------ | -------------------------------------- |
 | `401 Unauthorized` | 세션이 유효하지 않거나 로그인이 필요함 |
-| `403 Forbidden` | 조회 권한이 없는 사용자 |
+| `403 Forbidden`    | 조회 권한이 없는 사용자                |
 
 ---
 
@@ -73,5 +73,5 @@
 - **주간 기준**: 월요일을 주의 시작일로 간주합니다.
 - **데이터 소스**: `page_views` 테이블의 원시 로그 데이터를 실시간으로 집계하여 반환합니다.
 - **비교 로직**:
-    - `today.prevCount`: 어제 00:00:00 ~ 23:59:59 (KST)
-    - `thisWeek.prevCount`: 지난 주 월요일 00:00:00 ~ 지난 주 일요일 23:59:59 (KST)
+  - `today.prevCount`: 어제 00:00:00 ~ 23:59:59 (KST)
+  - `thisWeek.prevCount`: 지난 주 월요일 00:00:00 ~ 지난 주 일요일 23:59:59 (KST)

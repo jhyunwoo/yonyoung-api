@@ -1,5 +1,5 @@
-import { Context } from "hono";
-import HonoAppType from "../../types/honoAppType";
+import { type Context } from "hono";
+import type HonoAppType from "../../types/honoAppType";
 import { runInBackground } from "./background-task";
 
 const PUBLIC_CACHE_TTL_SECONDS = 120;
@@ -307,7 +307,7 @@ export const withPublicCacheHeaders = (response: Response): Response => {
   return annotateCacheMetadata(response, Date.now());
 };
 
-export const respondWithPublicCache = async (
+const respondFromPublicCache = async (
   c: Context<HonoAppType>,
   buildResponse: () => Promise<Response>,
 ): Promise<Response> => {
@@ -432,4 +432,16 @@ export const respondWithPublicCache = async (
   );
 
   return addCacheResultHeaders(response, "miss", "origin");
+};
+
+/**
+ * 캐시 히트로 돌려주는 Response는 `buildResponse`가 만들었던 것을 그대로 저장/재생한 것이므로
+ * 바디와 상태가 동일하다. 라우트 핸들러가 OpenAPI 응답 타입 검사를 잃지 않도록, 그 사실을
+ * 이 경계 한 곳에서만 타입으로 표현한다.
+ */
+export const respondWithPublicCache = async <TResponse extends Response>(
+  c: Context<HonoAppType>,
+  buildResponse: () => Promise<TResponse>,
+): Promise<TResponse> => {
+  return (await respondFromPublicCache(c, buildResponse)) as TResponse;
 };

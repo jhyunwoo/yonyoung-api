@@ -15,41 +15,21 @@ Cloudflare Workers 기반 Hono API 서버입니다.
 
 ```text
 src/
-  app/
-    createApp.ts
-    middleware/
-      body-size.ts
-      errorHandler.ts
-      logger.ts
-      requestId.ts
-      securityHeaders.ts
-    openapi.ts
-  bindings/
-    env.ts
-    types.ts
-  infra/
-    db/
-      client.ts
-      migrations.ts
-    r2/
-      client.ts
-  shared/
-    errors/
-      AppError.ts
-      errorCodes.ts
-      httpProblem.ts
-      mapError.ts
-    logging/
-      logger.ts
-  modules/                # domain routes (existing)
-  lib/                    # existing services/repositories/openapi helpers
-  index.ts
+  app/          # 애플리케이션 조립 (createApp, middleware, system/docs 라우트)
+  features/     # 도메인별 세로 단면 (contract · routes · policy · repository)
+  platform/     # 인프라 어댑터 (Drizzle 스키마, D1 헬퍼, DataService 조립)
+  shared/       # 도메인 없는 공용 요소 (errors, http guards, openapi primitives)
+  lib/          # 아직 feature로 옮기지 않은 가로 계층 (storage, uploads, health, cache)
+  routes/       # feature 라우터 마운트
+  index.ts      # Worker entrypoint (공개 API 캐시 경계 포함)
 
 tests/
-  integration/
+  integration/  # 실제 Workers 런타임 테스트
   setup/
   unit/
 ```
+
+계층 책임, 의존 방향, 새 feature 추가 위치는 [`docs/architecture.md`](docs/architecture.md)에 있습니다.
 
 ## API Docs
 
@@ -71,10 +51,10 @@ pnpm dev
 ## Quality Gates
 
 ```bash
-pnpm lint
-pnpm typecheck
+pnpm quality        # format:check + lint + typecheck
 pnpm test
 pnpm test:coverage
+pnpm test:integration
 ```
 
 ### Test Notes
@@ -112,6 +92,11 @@ file is at the repository root: `wrangler.jsonc`.
 PR에서 다음 검증이 수행됩니다.
 
 - `pnpm lint`
+- `pnpm format:check`
 - `pnpm typecheck`
+- `pnpm cf-typegen` + `worker-configuration.d.ts` diff 검사
 - `pnpm test`
 - `pnpm test:coverage`
+- `pnpm test:integration`
+- `pnpm deploy:dry-run`
+- `pnpm security:audit`

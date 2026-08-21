@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { REQUIRED_DESCRIPTION_SECTIONS } from "../lib/openapi/descriptions";
-import { OpenAPIDocument } from "../lib/openapi/merge";
+import { type OpenAPIDocument } from "../lib/openapi/merge";
 import { expectErrorCode } from "./test-helpers";
 
 const authOpenApiFixture: OpenAPIDocument = {

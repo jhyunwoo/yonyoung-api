@@ -6,7 +6,7 @@ vi.mock("../lib/db", () => ({
   default: createDBMock,
 }));
 
-import { createDbDataService } from "../lib/services/db-service";
+import { createDbDataService } from "../platform/db/data-service-composition";
 
 // D1 파라미터 제한(100개) 회귀 테스트: 유저 50명 시점에
 // audit_logs 조회가 resourceType(1) + resourceId(50) + createdAt(50) = 101개 파라미터로

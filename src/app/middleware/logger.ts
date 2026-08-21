@@ -32,15 +32,17 @@ const redactHeaders = (headers: Headers): Record<string, string> => {
       continue;
     }
 
-    snapshot[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? "[REDACTED]" : value;
+    snapshot[key] = SENSITIVE_HEADERS.has(key.toLowerCase())
+      ? "[REDACTED]"
+      : value;
   }
 
   return snapshot;
 };
 
-const resolveExecutionContext = (
-  c: { executionCtx?: WaitUntilContext },
-): WaitUntilContext | undefined => {
+const resolveExecutionContext = (c: {
+  executionCtx?: WaitUntilContext;
+}): WaitUntilContext | undefined => {
   try {
     return c.executionCtx;
   } catch {
@@ -63,11 +65,8 @@ const enqueueLog = (
   void task;
 };
 
-const readRequestId = (
-  c: {
-    get: (key: "requestId") => string;
-  },
-): string => c.get("requestId");
+const readRequestId = (c: { get: (key: "requestId") => string }): string =>
+  c.get("requestId");
 
 const DEFAULT_PERF_ANALYTICS_SAMPLE_RATE = 0.2;
 

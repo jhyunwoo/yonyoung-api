@@ -6,11 +6,11 @@
 
 ## 기본 정보
 
-| 항목 | 값 |
-|------|-----|
-| Base URL | `https://yonyoung.yonsei.ac.kr` |
-| 인증 | **불필요** (Public API) |
-| Content-Type | `application/json` |
+| 항목         | 값                              |
+| ------------ | ------------------------------- |
+| Base URL     | `https://yonyoung.yonsei.ac.kr` |
+| 인증         | **불필요** (Public API)         |
+| Content-Type | `application/json`              |
 
 ---
 
@@ -26,9 +26,9 @@ POST /api/public/views
 
 #### Headers
 
-| 이름 | 값 | 필수 |
-|------|-----|------|
-| `Content-Type` | `application/json` | ✅ |
+| 이름           | 값                 | 필수 |
+| -------------- | ------------------ | ---- |
+| `Content-Type` | `application/json` | ✅   |
 
 #### Request Body
 
@@ -39,10 +39,10 @@ POST /api/public/views
 }
 ```
 
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|------|------|
-| `resourceType` | `string` | ✅ | 리소스 타입. `"activity"` 또는 `"exhibition"` 중 하나 |
-| `resourceId` | `string` (UUID) | ✅ | 조회수를 기록할 리소스의 UUID |
+| 필드           | 타입            | 필수 | 설명                                                  |
+| -------------- | --------------- | ---- | ----------------------------------------------------- |
+| `resourceType` | `string`        | ✅   | 리소스 타입. `"activity"` 또는 `"exhibition"` 중 하나 |
+| `resourceId`   | `string` (UUID) | ✅   | 조회수를 기록할 리소스의 UUID                         |
 
 ### 응답
 
@@ -87,7 +87,7 @@ useEffect(() => {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      resourceType: "activity",  // 또는 "exhibition"
+      resourceType: "activity", // 또는 "exhibition"
       resourceId: activity.id,
     }),
   }).catch(() => {
@@ -110,10 +110,10 @@ GET /api/public/views?resourceType={type}&resourceIds={id1},{id2},{id3}
 
 #### Query Parameters
 
-| 파라미터 | 타입 | 필수 | 설명 |
-|----------|------|------|------|
-| `resourceType` | `string` | ✅ | 리소스 타입. `"activity"` 또는 `"exhibition"` |
-| `resourceIds` | `string` | ✅ | 쉼표(`,`)로 구분된 리소스 UUID 목록. 최대 **100개** |
+| 파라미터       | 타입     | 필수 | 설명                                                |
+| -------------- | -------- | ---- | --------------------------------------------------- |
+| `resourceType` | `string` | ✅   | 리소스 타입. `"activity"` 또는 `"exhibition"`       |
+| `resourceIds`  | `string` | ✅   | 쉼표(`,`)로 구분된 리소스 UUID 목록. 최대 **100개** |
 
 ### 응답
 
@@ -129,8 +129,8 @@ GET /api/public/views?resourceType={type}&resourceIds={id1},{id2},{id3}
 }
 ```
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
+| 필드   | 타입                     | 설명                                                                                             |
+| ------ | ------------------------ | ------------------------------------------------------------------------------------------------ |
 | `data` | `Record<string, number>` | 리소스 ID를 키, 누적 조회수를 값으로 하는 객체. 요청한 모든 ID가 포함되며 조회수가 없는 경우 `0` |
 
 #### 캐시 헤더
@@ -161,7 +161,7 @@ Cache-Control: no-store, no-cache, must-revalidate
 // 활동 목록의 조회수 일괄 조회
 const ids = activities.map((a) => a.id).join(",");
 const res = await fetch(
-  `https://yonyoung.yonsei.ac.kr/api/public/views?resourceType=activity&resourceIds=${ids}`
+  `https://yonyoung.yonsei.ac.kr/api/public/views?resourceType=activity&resourceIds=${ids}`,
 );
 const { data: viewCounts } = await res.json();
 // viewCounts = { "id-1": 42, "id-2": 15, ... }
@@ -176,7 +176,7 @@ type ViewCounts = Record<string, number>;
 
 function useViewCounts(
   resourceType: "activity" | "exhibition",
-  resourceIds: string[]
+  resourceIds: string[],
 ) {
   const [counts, setCounts] = useState<ViewCounts>({});
 
@@ -194,10 +194,14 @@ function useViewCounts(
 }
 
 // 사용
-function ActivityList({ activities }: { activities: Array<{ id: string; title: string }> }) {
+function ActivityList({
+  activities,
+}: {
+  activities: Array<{ id: string; title: string }>;
+}) {
   const viewCounts = useViewCounts(
     "activity",
-    activities.map((a) => a.id)
+    activities.map((a) => a.id),
   );
 
   return (
@@ -216,10 +220,10 @@ function ActivityList({ activities }: { activities: Array<{ id: string; title: s
 
 ## 리소스 타입 정리
 
-| `resourceType` 값 | 대상 | 관련 API |
-|---|---|---|
-| `"activity"` | 활동 게시물 | `GET /api/public/activities` |
-| `"exhibition"` | 전시 게시물 | `GET /api/public/exhibitions` |
+| `resourceType` 값 | 대상        | 관련 API                      |
+| ----------------- | ----------- | ----------------------------- |
+| `"activity"`      | 활동 게시물 | `GET /api/public/activities`  |
+| `"exhibition"`    | 전시 게시물 | `GET /api/public/exhibitions` |
 
 ---
 
@@ -237,9 +241,9 @@ function ActivityList({ activities }: { activities: Array<{ id: string; title: s
 }
 ```
 
-| HTTP 상태 | `code` | 발생 조건 |
-|-----------|--------|----------|
-| `400` | `BAD_REQUEST` | `resourceType`이 유효하지 않음, `resourceId`/`resourceIds`가 UUID가 아님, 필수 파라미터 누락, `resourceIds` 100개 초과 |
+| HTTP 상태 | `code`        | 발생 조건                                                                                                              |
+| --------- | ------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `400`     | `BAD_REQUEST` | `resourceType`이 유효하지 않음, `resourceId`/`resourceIds`가 UUID가 아님, 필수 파라미터 누락, `resourceIds` 100개 초과 |
 
 ---
 
