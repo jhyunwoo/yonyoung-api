@@ -41,6 +41,15 @@ import { AppError } from "../../shared/errors/AppError";
 
 type App = OpenAPIHono<HonoAppType>;
 
+/**
+ * 이 feature 가 실제로 쓰는 것만 선언한다.
+ * 애플리케이션 전체 dependency bag 을 받으면 무엇에 의존하는지 파일을 다 읽어야 알 수 있다.
+ */
+export type AttachmentRouteDependencies = Pick<
+  AppDependencies,
+  "resolveActor" | "getDataService"
+>;
+
 // 첨부파일 권한은 scope별로 다른 리소스 정책을 따른다:
 // site_donate(후원 페이지)는 site_setting(회장/부회장 전용), activity는 활동 관리 권한(운영진 이상)
 const policyResourceByScope: Record<AttachmentScope, Resource> = {
@@ -216,7 +225,7 @@ const listPublicAttachmentsRoute = createRoute({
 
 export const registerAttachmentRoutes = (
   app: App,
-  dependencies: AppDependencies,
+  dependencies: AttachmentRouteDependencies,
 ) => {
   app.openapi(listAttachmentsRoute, async (c) => {
     const actor = await requireAuthenticatedActor(c, dependencies);

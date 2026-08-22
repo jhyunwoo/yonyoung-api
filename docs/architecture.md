@@ -94,6 +94,14 @@ HTTP와 무관한 판단은 route 파일 안의 이름 붙은 헬퍼나 별도 �
 - `pnpm db:generate`가 "No schema changes"를 내는지 확인하면 스키마 파일 재배치가
   마이그레이션에 영향을 주지 않았음을 보장할 수 있다.
 
+## feature 별 dependency
+
+각 `register*Routes` 는 애플리케이션 전체 `AppDependencies` 대신 자기가 실제로 쓰는
+것만 `Pick` 한 타입을 받는다(예: `ActivityRouteDependencies = Pick<AppDependencies,
+"resolveActor" | "getDataService">`). composition root 는 같은 객체를 그대로 넘기지만,
+파일을 열면 그 feature 가 무엇에 의존하는지 선언부만 보고 알 수 있고 새 의존이
+소리 없이 늘어나면 컴파일이 막는다.
+
 ## 남아 있는 호환 계층
 
 `DataService`(`src/lib/services/types.ts`)는 아직 모든 도메인의 영속화 메서드를 한 타입으로

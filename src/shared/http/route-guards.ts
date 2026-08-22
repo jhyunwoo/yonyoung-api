@@ -2,6 +2,9 @@ import type { Context } from "hono";
 import { can } from "../../lib/authorization/policy";
 import type { Action, Actor, Resource } from "../../lib/authorization/types";
 import type { AppDependencies } from "../../lib/services/dependencies";
+
+/** actor 해석에 필요한 것만 받는다. 라우트 가드는 나머지 의존성을 알 필요가 없다. */
+export type ActorDependencies = Pick<AppDependencies, "resolveActor">;
 import type HonoAppType from "../../types/honoAppType";
 import { AppError } from "../errors/AppError";
 
@@ -14,7 +17,7 @@ import { AppError } from "../errors/AppError";
  */
 export const requireAuthenticatedActor = async (
   c: Context<HonoAppType>,
-  dependencies: AppDependencies,
+  dependencies: ActorDependencies,
 ): Promise<Actor> => {
   const existingActor = c.get("actor");
   const actorResolved = c.get("actorResolved");

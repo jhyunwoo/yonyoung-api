@@ -20,6 +20,15 @@ import { AppError } from "../../shared/errors/AppError";
 
 type App = OpenAPIHono<HonoAppType>;
 
+/**
+ * 이 feature 가 실제로 쓰는 것만 선언한다.
+ * 애플리케이션 전체 dependency bag 을 받으면 무엇에 의존하는지 파일을 다 읽어야 알 수 있다.
+ */
+export type PageViewRouteDependencies = Pick<
+  AppDependencies,
+  "resolveActor" | "getDataService" | "getViewCountStore" | "allowPageViewWrite"
+>;
+
 const RecordPageViewResponseSchema = z
   .object({ ok: z.literal(true) })
   .openapi("ApiRecordPageViewResponse");
@@ -77,7 +86,7 @@ const getDashboardPageViewStatsRoute = createRoute({
 // 조회수 기록은 fire-and-forget이다. 기록 단계의 실패는 무시하고 항상 200으로 응답한다.
 export const registerPageViewRoutes = (
   app: App,
-  dependencies: AppDependencies,
+  dependencies: PageViewRouteDependencies,
 ) => {
   app.openapi(recordPageViewRoute, async (c) => {
     let body: unknown;

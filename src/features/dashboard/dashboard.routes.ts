@@ -21,6 +21,15 @@ import { AppError } from "../../shared/errors/AppError";
 
 type App = OpenAPIHono<HonoAppType>;
 
+/**
+ * 이 feature 가 실제로 쓰는 것만 선언한다.
+ * 애플리케이션 전체 dependency bag 을 받으면 무엇에 의존하는지 파일을 다 읽어야 알 수 있다.
+ */
+export type DashboardRouteDependencies = Pick<
+  AppDependencies,
+  "resolveActor" | "getDataService" | "readR2TotalUsageBytes"
+>;
+
 const getAdminDashboardStatsRoute = createRoute({
   method: "get",
   path: "/api/admin/dashboard",
@@ -109,7 +118,7 @@ const readR2StorageUsage = async (
 
 export const registerDashboardRoutes = (
   app: App,
-  dependencies: AppDependencies,
+  dependencies: DashboardRouteDependencies,
 ) => {
   app.openapi(getAdminDashboardStatsRoute, async (c) => {
     const actor = await requireAuthenticatedActor(c, dependencies);

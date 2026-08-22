@@ -60,6 +60,18 @@ import { readValidated } from "../../shared/http/validated-input";
 
 
 type App = OpenAPIHono<HonoAppType>;
+
+/**
+ * 이 feature 가 실제로 쓰는 것만 선언한다.
+ * 애플리케이션 전체 dependency bag 을 받으면 무엇에 의존하는지 파일을 다 읽어야 알 수 있다.
+ */
+export type PublicRouteDependencies = Pick<
+  AppDependencies,
+  | "getDataService"
+  | "getViewCountStore"
+  | "allowPageViewWrite"
+>;
+
 const PUBLIC_MEDIA_CACHE_CONTROL =
   "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400";
 const VIEW_COUNTS_CACHE_CONTROL = "no-store, no-cache, must-revalidate";
@@ -373,7 +385,7 @@ const getViewCountsRoute = createRoute({
 
 export const registerPublicRoutes = (
   app: App,
-  dependencies: AppDependencies,
+  dependencies: PublicRouteDependencies,
 ) => {
   app.get("/api/public/media/:objectKey{.+}", async (c) => {
     const objectKey = c.req.param("objectKey");

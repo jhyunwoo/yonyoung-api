@@ -21,6 +21,15 @@ import type HonoAppType from "../../types/honoAppType";
 
 type App = OpenAPIHono<HonoAppType>;
 
+/**
+ * 이 feature 가 실제로 쓰는 것만 선언한다.
+ * 애플리케이션 전체 dependency bag 을 받으면 무엇에 의존하는지 파일을 다 읽어야 알 수 있다.
+ */
+export type DocsRouteDependencies = Pick<
+  AppDependencies,
+  "getAuthOpenApiSchema" | "isDocsEnabled"
+>;
+
 const OPENAPI_CACHE_TTL_MS = 120_000;
 const OPENAPI_CACHE_STALE_MS = 300_000;
 const DOCS_CACHE_CONTROL =
@@ -78,7 +87,7 @@ const createDocsUiRoute = (path: string, operationId: string) =>
 const buildOpenApiDocument = async (
   c: Context<HonoAppType>,
   app: App,
-  dependencies: AppDependencies,
+  dependencies: DocsRouteDependencies,
 ) => {
   const internalDoc = app.getOpenAPI31Document({
     ...OPENAPI_BASE_DOCUMENT,
@@ -122,7 +131,7 @@ const setDocsCacheHeaders = (c: Context<HonoAppType>): void => {
 
 const assertDocsEnabled = (
   c: Context<HonoAppType>,
-  dependencies: AppDependencies,
+  dependencies: DocsRouteDependencies,
 ): void => {
   if (!dependencies.isDocsEnabled(c)) {
     throw AppError.notFound("개발 환경에서만 OpenAPI 문서를 제공합니다.");

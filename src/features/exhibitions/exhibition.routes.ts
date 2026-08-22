@@ -42,6 +42,15 @@ import { AppError } from "../../shared/errors/AppError";
 
 type App = OpenAPIHono<HonoAppType>;
 
+/**
+ * 이 feature 가 실제로 쓰는 것만 선언한다.
+ * 애플리케이션 전체 dependency bag 을 받으면 무엇에 의존하는지 파일을 다 읽어야 알 수 있다.
+ */
+export type ExhibitionRouteDependencies = Pick<
+  AppDependencies,
+  "resolveActor" | "getDataService"
+>;
+
 const sanitizeExhibitionDescriptionField = <T extends { description: string }>(
   exhibition: T,
 ): T => ({
@@ -245,7 +254,7 @@ const deleteExhibitionImageRoute = createRoute({
 
 export const registerExhibitionRoutes = (
   app: App,
-  dependencies: AppDependencies,
+  dependencies: ExhibitionRouteDependencies,
 ) => {
   app.openapi(listExhibitionsRoute, async (c) => {
     const actor = await requireAuthenticatedActor(c, dependencies);

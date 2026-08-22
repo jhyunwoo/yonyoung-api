@@ -12,6 +12,12 @@ import { requireAuthenticatedActor } from "../../shared/http/route-guards";
 import type HonoAppType from "../../types/honoAppType";
 import { healthRoute, readinessRoute, statusRoute } from "./system.contract";
 
+/**
+ * 이 feature 가 실제로 쓰는 것만 선언한다.
+ * 애플리케이션 전체 dependency bag 을 받으면 무엇에 의존하는지 파일을 다 읽어야 알 수 있다.
+ */
+export type SystemRouteDependencies = Pick<AppDependencies, "resolveActor">;
+
 const API_NAME = "yonyoung-api" as const;
 const PUBLIC_HEALTH_CACHE_MS = 10_000;
 const API_VERSION =
@@ -22,7 +28,7 @@ const API_VERSION =
 
 export const registerSystemRoutes = (
   app: OpenAPIHono<HonoAppType>,
-  dependencies: AppDependencies,
+  dependencies: SystemRouteDependencies,
 ) => {
   app.openapi(statusRoute, (c) =>
     c.json({
