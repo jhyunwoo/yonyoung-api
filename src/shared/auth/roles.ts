@@ -43,6 +43,8 @@ export const normalizeLegacyRole = (
       return rawRole;
     case "member":
       return "regular_member";
+    case null:
+    case undefined:
     default:
       return UNVERIFIED_ROLE;
   }

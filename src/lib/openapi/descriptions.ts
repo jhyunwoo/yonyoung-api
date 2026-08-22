@@ -44,12 +44,6 @@ const readOnlyErrorGuide = [
   "`404`: 조회 대상이 없는 경우 반환합니다.",
 ] as const;
 
-/**
- * mkSpec의 핵심 비즈니스 로직을 수행합니다.
- * @param spec 함수 로직에서 사용하는 입력값입니다.
- * @returns 함수 실행 결과를 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 const mkSpec = (spec: OperationDocSpec): OperationDocSpec => spec;
 
 const internalOperationSpecs: Record<string, OperationDocSpec> = {
@@ -1030,13 +1024,6 @@ const authSpecMap: AuthSpecMap = {
   },
 };
 
-/**
- * buildUnknownAuthSpec 값을 조회하거나 입력을 가공해 필요한 결과를 생성합니다.
- * @param path 리소스 경로 또는 라우팅 경로 문자열입니다.
- * @param method 함수 로직에서 사용하는 입력값입니다.
- * @returns 조회/계산된 결과 값을 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 const buildUnknownAuthSpec = (
   path: string,
   method: HttpMethod,
@@ -1067,25 +1054,13 @@ const buildUnknownAuthSpec = (
   });
 };
 
-/**
- * formatList의 핵심 비즈니스 로직을 수행합니다.
- * @param items 반복 처리 중인 현재 항목입니다.
- * @returns 함수 실행 결과를 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 const formatList = (items: string[]): string => {
   if (items.length === 0) {
     return "- 해당 사항이 없습니다.";
   }
-  return items.map(/** items.map 실행 과정에서 필요한 연산을 수행하는 콜백 함수입니다. @param item 반복 처리 중인 현재 항목입니다. @returns 함수 실행 결과를 반환합니다. @remarks 상위 함수의 호출 시점과 조건에 따라 실행 순서가 달라질 수 있습니다. */ (item) => `- ${item}`).join("\n");
+  return items.map((item) => `- ${item}`).join("\n");
 };
 
-/**
- * renderOperationDescription의 핵심 비즈니스 로직을 수행합니다.
- * @param spec 함수 로직에서 사용하는 입력값입니다.
- * @returns 함수 실행 결과를 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 export const renderOperationDescription = (spec: OperationDocSpec): string => {
   const sections = [
     `${REQUIRED_DESCRIPTION_SECTIONS[0]}\n${spec.overview}`,
@@ -1099,12 +1074,6 @@ export const renderOperationDescription = (spec: OperationDocSpec): string => {
   return sections.join("\n\n");
 };
 
-/**
- * asMethod의 핵심 비즈니스 로직을 수행합니다.
- * @param method 함수 로직에서 사용하는 입력값입니다.
- * @returns 함수 실행 결과를 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 const asMethod = (method: string): HttpMethod | null => {
   const normalized = method.toLowerCase();
   if (
@@ -1122,12 +1091,6 @@ const asMethod = (method: string): HttpMethod | null => {
   return null;
 };
 
-/**
- * getInternalOperationDocSpec 값을 조회하거나 입력을 가공해 필요한 결과를 생성합니다.
- * @param operationId 대상을 식별하기 위한 ID 값입니다.
- * @returns 조회/계산된 결과 값을 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 export const getInternalOperationDocSpec = (
   operationId: string | undefined,
 ): OperationDocSpec | null => {
@@ -1137,13 +1100,6 @@ export const getInternalOperationDocSpec = (
   return internalOperationSpecs[operationId] ?? null;
 };
 
-/**
- * getAuthOperationDocSpec 값을 조회하거나 입력을 가공해 필요한 결과를 생성합니다.
- * @param path 리소스 경로 또는 라우팅 경로 문자열입니다.
- * @param method 함수 로직에서 사용하는 입력값입니다.
- * @returns 조회/계산된 결과 값을 반환합니다.
- * @remarks 호출부와의 계약(입력 검증, null 처리, 에러 전파 규칙)을 일관되게 유지해야 합니다.
- */
 export const getAuthOperationDocSpec = (
   path: string,
   method: string,

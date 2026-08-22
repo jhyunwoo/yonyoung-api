@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/d1";
 import type { Bindings } from "../../bindings/types";
 import { AppError } from "../../shared/errors/AppError";
-import * as schema from "../../lib/db/schema";
+import * as schema from "../../platform/db/schema";
 
 export const resolveD1Database = (
   env: Pick<Bindings, "DB" | "db">,

@@ -1,5 +1,5 @@
 import createDB from ".";
-import { createDbDataService } from "../services/db-service";
+import { createDbDataService } from "../../platform/db/data-service-composition";
 import type { DataService } from "../services/types";
 
 const drizzleClientCache = new WeakMap<D1Database, ReturnType<typeof createDB>>();

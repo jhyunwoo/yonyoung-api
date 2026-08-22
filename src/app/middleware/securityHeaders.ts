@@ -40,10 +40,9 @@ const isCspReportOnlyEnabled = (value: string | undefined): boolean => {
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 };
 
-export const apiSecurityHeadersMiddleware: MiddlewareHandler<HonoAppType> = async (
-  c,
-  next,
-) => {
+export const apiSecurityHeadersMiddleware: MiddlewareHandler<
+  HonoAppType
+> = async (c, next) => {
   await baseSecureHeaders(c, async () => {
     await next();
   });

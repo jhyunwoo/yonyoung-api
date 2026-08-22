@@ -13,10 +13,9 @@ const resolveRedirectTarget = (url: URL): string | null => {
   return null;
 };
 
-export const legacyApiRedirectMiddleware: MiddlewareHandler<HonoAppType> = async (
-  c,
-  next,
-) => {
+export const legacyApiRedirectMiddleware: MiddlewareHandler<
+  HonoAppType
+> = async (c, next) => {
   const requestUrl = new URL(c.req.url);
   const target = resolveRedirectTarget(requestUrl);
 

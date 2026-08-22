@@ -44,7 +44,10 @@ export class AppError extends Error {
     });
   }
 
-  static unauthorized(message = "로그인이 필요합니다.", details?: unknown): AppError {
+  static unauthorized(
+    message = "로그인이 필요합니다.",
+    details?: unknown,
+  ): AppError {
     return new AppError({
       httpStatus: 401,
       code: ERROR_CODES.UNAUTHORIZED,
@@ -62,7 +65,10 @@ export class AppError extends Error {
     });
   }
 
-  static notFound(message = "대상을 찾을 수 없습니다.", details?: unknown): AppError {
+  static notFound(
+    message = "대상을 찾을 수 없습니다.",
+    details?: unknown,
+  ): AppError {
     return new AppError({
       httpStatus: 404,
       code: ERROR_CODES.NOT_FOUND,
@@ -95,6 +101,30 @@ export class AppError extends Error {
       code: ERROR_CODES.UNSUPPORTED_MEDIA_TYPE,
       message,
       details,
+    });
+  }
+
+  /**
+   * 클라이언트에 사유를 그대로 보여 줘야 하는 500. `expose: true`이므로
+   * 전역 errorHandler가 별도 에러 로그를 남기지 않는다(원인이 이미 메시지에 있다).
+   */
+  /** 422: 형식은 맞지만 업로드 상태 등 도메인 제약을 위반한 요청. */
+  static unprocessableEntity(message: string, details?: unknown): AppError {
+    return new AppError({
+      httpStatus: 422,
+      code: ERROR_CODES.BAD_REQUEST,
+      message,
+      details,
+    });
+  }
+
+  static internalWithReason(message: string, details?: unknown): AppError {
+    return new AppError({
+      httpStatus: 500,
+      code: ERROR_CODES.INTERNAL_ERROR,
+      message,
+      details,
+      expose: true,
     });
   }
 

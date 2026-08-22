@@ -37,10 +37,7 @@ type RuntimeBindingOverrides = {
 // Wrangler emits literal string types for vars declared in wrangler.jsonc.
 // Runtime/test overrides legitimately use other validated values, so replace
 // those generated keys instead of intersecting them with their literals.
-export type Bindings = Omit<
-  CloudflareBindings,
-  keyof RuntimeBindingOverrides
-> &
+export type Bindings = Omit<CloudflareBindings, keyof RuntimeBindingOverrides> &
   RuntimeBindingOverrides;
 
 export type AppVariables = {

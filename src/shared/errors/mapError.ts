@@ -32,7 +32,9 @@ const isLegacyHttpError = (error: unknown): error is LegacyHttpErrorLike => {
 };
 
 const mapLegacyHttpError = (error: LegacyHttpErrorLike): AppError => {
-  const resolvedCode = (Object.values(ERROR_CODES) as string[]).includes(error.code)
+  const resolvedCode = (Object.values(ERROR_CODES) as string[]).includes(
+    error.code,
+  )
     ? (error.code as ErrorCode)
     : ERROR_CODES.INTERNAL_ERROR;
 
@@ -45,7 +47,9 @@ const mapLegacyHttpError = (error: LegacyHttpErrorLike): AppError => {
 };
 
 const looksLikeMalformedJson = (error: Error): boolean => {
-  return MALFORMED_JSON_MESSAGES.some((needle) => error.message.includes(needle));
+  return MALFORMED_JSON_MESSAGES.some((needle) =>
+    error.message.includes(needle),
+  );
 };
 
 const looksLikeAuthError = (error: Error): boolean => {
@@ -133,7 +137,10 @@ export const mapErrorToAppError = (error: unknown): AppError => {
   if (error instanceof HTTPException) {
     return new AppError({
       httpStatus: error.status,
-      code: error.status >= 500 ? ERROR_CODES.INTERNAL_ERROR : ERROR_CODES.BAD_REQUEST,
+      code:
+        error.status >= 500
+          ? ERROR_CODES.INTERNAL_ERROR
+          : ERROR_CODES.BAD_REQUEST,
       message: error.message || "요청 처리 중 오류가 발생했습니다.",
       expose: error.status < 500,
       cause: error,
@@ -210,7 +217,11 @@ export const mapErrorToAppError = (error: unknown): AppError => {
       });
     }
 
-    return AppError.internal("서버 내부 오류가 발생했습니다.", undefined, error);
+    return AppError.internal(
+      "서버 내부 오류가 발생했습니다.",
+      undefined,
+      error,
+    );
   }
 
   return AppError.internal("서버 내부 오류가 발생했습니다.", undefined, error);

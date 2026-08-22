@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
-  ApiAdminUpdateUserSchema,
   ApiCreateAttachmentSchema,
+} from "../features/attachments/attachment.contract";
+import {
   ApiCreateLinktreeItemSchema,
-  ApiMemberProfileUpdateSchema,
+} from "../features/linktree/linktree.contract";
+import {
   ApiUpdateSiteSettingsSchema,
-} from "../lib/openapi/schemas";
+} from "../features/site-settings/site-settings.contract";
+import {
+  ApiAdminUpdateUserSchema,
+  ApiMemberProfileUpdateSchema,
+} from "../features/users/user.contract";
 
 const unsafePublicUrls = [
   "javascript:alert(document.domain)",

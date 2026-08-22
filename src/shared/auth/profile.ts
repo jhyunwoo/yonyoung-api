@@ -46,5 +46,7 @@ export const hasCompletedRequiredProfileFields = (
     return false;
   }
 
-  return REQUIRED_PROFILE_KEYS.every((key) => readProfileField(user, key) !== null);
+  return REQUIRED_PROFILE_KEYS.every(
+    (key) => readProfileField(user, key) !== null,
+  );
 };

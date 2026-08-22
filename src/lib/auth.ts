@@ -2,7 +2,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { openAPI } from "better-auth/plugins";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
-import * as schema from "./db/schema";
+import * as schema from "../platform/db/schema";
 import createDB from "./db";
 import type { AppBindings } from "../types/honoAppType";
 import {

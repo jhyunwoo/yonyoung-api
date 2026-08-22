@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SQL } from "drizzle-orm";
 import { SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
-import { generations } from "../lib/db/schema";
+import { generations } from "../platform/db/schema";
 
 const createDBMock = vi.hoisted(() => vi.fn());
 
@@ -9,7 +9,7 @@ vi.mock("../lib/db", () => ({
   default: createDBMock,
 }));
 
-import { createDbDataService } from "../lib/services/db-service";
+import { createDbDataService } from "../platform/db/data-service-composition";
 
 const createMockDb = () => {
   const findFirst = vi.fn(async () => undefined as { id: string } | undefined);

@@ -21,7 +21,7 @@ const createMockD1PreparedStatement = (
       return prepared as unknown as D1PreparedStatement;
     },
     first: async <T = Record<string, unknown>>() =>
-      ({ result: 1 } as unknown as T),
+      ({ result: 1 }) as unknown as T,
     run: async <T = Record<string, unknown>>() => {
       if (normalizedQuery.startsWith("insert into view_counts")) {
         const [resourceType, resourceId] = boundValues as [string, string];
@@ -51,7 +51,9 @@ const createMockD1PreparedStatement = (
       if (normalizedQuery.includes("from view_counts")) {
         const [resourceType, ...resourceIds] = boundValues as string[];
         const results = resourceIds
-          .map((resourceId) => viewCounts.get(createKey(resourceType, resourceId)))
+          .map((resourceId) =>
+            viewCounts.get(createKey(resourceType, resourceId)),
+          )
           .filter((row): row is ViewCountRow => Boolean(row))
           .map((row) => ({
             resource_id: row.resourceId,
@@ -65,10 +67,10 @@ const createMockD1PreparedStatement = (
     },
     raw: async <T = unknown[]>(options?: { columnNames?: boolean }) => {
       if (options?.columnNames) {
-        return ([[]] as unknown) as [string[], ...T[]];
+        return [[]] as unknown as [string[], ...T[]];
       }
 
-      return ([] as unknown) as T[];
+      return [] as unknown as T[];
     },
   };
 
@@ -86,16 +88,20 @@ const createMockD1Result = <T>(results: T[] = []): D1Result<T> => {
 export const createMockD1Database = (): D1Database => {
   const viewCounts = new Map<string, ViewCountRow>();
   const database = {
-    prepare: (query: string) => createMockD1PreparedStatement(query, viewCounts),
-    batch: async <T = unknown>(_statements: D1PreparedStatement[]) =>
-      [createMockD1Result<T>()],
+    prepare: (query: string) =>
+      createMockD1PreparedStatement(query, viewCounts),
+    batch: async <T = unknown>(_statements: D1PreparedStatement[]) => [
+      createMockD1Result<T>(),
+    ],
     exec: async (_query: string) => ({ count: 0, duration: 0 }),
     dump: async () => new ArrayBuffer(0),
     withSession: (_bookmark?: D1SessionBookmark | D1SessionConstraint) =>
       ({
-        prepare: (query: string) => createMockD1PreparedStatement(query, viewCounts),
-        batch: async <T = unknown>(_statements: D1PreparedStatement[]) =>
-          [createMockD1Result<T>()],
+        prepare: (query: string) =>
+          createMockD1PreparedStatement(query, viewCounts),
+        batch: async <T = unknown>(_statements: D1PreparedStatement[]) => [
+          createMockD1Result<T>(),
+        ],
         getBookmark: () => "bookmark",
       }) as D1DatabaseSession,
   };
@@ -110,12 +116,7 @@ export const createMockR2Bucket = (): R2Bucket => {
     put: async (
       key: string,
       value:
-        | string
-        | ArrayBuffer
-        | ReadableStream
-        | ArrayBufferView
-        | Blob
-        | null,
+        string | ArrayBuffer | ReadableStream | ArrayBufferView | Blob | null,
     ) => {
       const text = typeof value === "string" ? value : "value";
       store.set(key, text);
